@@ -14,7 +14,7 @@ const PORT = Number(process.env.PORT ?? 3100)
 
 async function main() {
   // 1. Pick your adapter — swap this line to change connection layer
-  const adapter = new BaileysAdapter('./data/auth')
+  const adapter = new BaileysAdapter('./data/auth', './data/whatsapp.db', process.env.DB_ENCRYPTION_SECRET)
   const store = adapter.getStore()
 
   // 2. Register plugins

@@ -21,9 +21,9 @@ export class BaileysAdapter implements WAAdapter {
   private connectedHandlers: (() => void)[] = []
   private disconnectedHandlers: ((reason: string) => void)[] = []
 
-  constructor(authDir = './data/auth', dbPath = './data/whatsapp.db') {
+  constructor(authDir = './data/auth', dbPath = './data/whatsapp.db', dbEncryptionKey?: string) {
     this.authDir = authDir
-    this.store = new SQLiteStore(dbPath)
+    this.store = new SQLiteStore(dbPath, dbEncryptionKey)
   }
 
   getStore(): SQLiteStore {

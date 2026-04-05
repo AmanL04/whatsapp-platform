@@ -1,17 +1,20 @@
 import Database from 'better-sqlite3'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as crypto from 'crypto'
 import type { Chat, Message, Media, MessageQuery } from '../../core/types'
 
 export class SQLiteStore {
   private db: Database.Database
+  private encryptionKey: string | null
 
-  constructor(dbPath = './data/whatsapp.db') {
+  constructor(dbPath = './data/whatsapp.db', encryptionKey?: string) {
     const dir = path.dirname(dbPath)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 
     this.db = new Database(dbPath)
     this.db.pragma('journal_mode = WAL')
+    this.encryptionKey = encryptionKey ?? null
     this.init()
   }
 
@@ -66,6 +69,38 @@ export class SQLiteStore {
       CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, timestamp);
       CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(timestamp);
       CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
+
+      CREATE TABLE IF NOT EXISTS apps (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        webhook_global_url TEXT,
+        webhook_secret TEXT,
+        webhook_events TEXT,
+        api_key TEXT NOT NULL,
+        permissions TEXT,
+        scope_chat_types TEXT,
+        scope_specific_chats TEXT,
+        active INTEGER DEFAULT 1,
+        created_at INTEGER
+      );
+
+      CREATE TABLE IF NOT EXISTS webhook_deliveries (
+        id TEXT PRIMARY KEY,
+        app_id TEXT,
+        event TEXT,
+        payload TEXT,
+        status TEXT,
+        attempts INTEGER DEFAULT 0,
+        last_attempt_at INTEGER,
+        response_status INTEGER,
+        created_at INTEGER
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_apps_api_key ON apps(api_key);
+      CREATE INDEX IF NOT EXISTS idx_apps_active ON apps(active);
+      CREATE INDEX IF NOT EXISTS idx_deliveries_app ON webhook_deliveries(app_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_deliveries_created ON webhook_deliveries(created_at);
     `)
   }
 
@@ -238,6 +273,169 @@ export class SQLiteStore {
     return this.db.prepare('SELECT * FROM summaries ORDER BY created_at DESC LIMIT ?').all(limit)
   }
 
+  // ─── Encryption helpers ─────────────────────────────────────────────────────
+  // Protects api_key and webhook_secret columns at rest. The threat model is
+  // DB file exfiltration without env vars (e.g. backup leak, volume export).
+
+  encryptField(value: string): string {
+    if (!this.encryptionKey) return value
+    const iv = crypto.randomBytes(16)
+    const key = crypto.scryptSync(this.encryptionKey, 'salt', 32)
+    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
+    const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()])
+    return iv.toString('hex') + ':' + encrypted.toString('hex')
+  }
+
+  decryptField(value: string): string {
+    if (!this.encryptionKey) return value
+    const [ivHex, encHex] = value.split(':')
+    if (!ivHex || !encHex) return value // not encrypted, return as-is
+    const iv = Buffer.from(ivHex, 'hex')
+    const key = crypto.scryptSync(this.encryptionKey, 'salt', 32)
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+    const decrypted = Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()])
+    return decrypted.toString('utf8')
+  }
+
+  // ─── Apps ──────────────────────────────────────────────────────────────────
+
+  insertApp(app: {
+    id: string
+    name: string
+    description: string
+    webhookGlobalUrl: string
+    webhookSecret: string
+    webhookEvents: { name: string; url?: string }[]
+    apiKey: string
+    permissions: string[]
+    scopeChatTypes: string[]
+    scopeSpecificChats: string[]
+  }) {
+    this.db.prepare(`
+      INSERT INTO apps
+        (id, name, description, webhook_global_url, webhook_secret, webhook_events, api_key, permissions, scope_chat_types, scope_specific_chats, active, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+    `).run(
+      app.id,
+      app.name,
+      app.description,
+      app.webhookGlobalUrl,
+      this.encryptField(app.webhookSecret),
+      JSON.stringify(app.webhookEvents),
+      this.encryptField(app.apiKey),
+      JSON.stringify(app.permissions),
+      JSON.stringify(app.scopeChatTypes),
+      JSON.stringify(app.scopeSpecificChats),
+      Math.floor(Date.now() / 1000),
+    )
+  }
+
+  listApps() {
+    const rows = this.db.prepare('SELECT * FROM apps WHERE active = 1 ORDER BY created_at DESC').all() as any[]
+    return rows.map(r => this.rowToApp(r))
+  }
+
+  getAppById(id: string) {
+    const row = this.db.prepare('SELECT * FROM apps WHERE id = ?').get(id) as any
+    return row ? this.rowToApp(row) : null
+  }
+
+  getAppByApiKey(apiKey: string) {
+    // Since api_key is encrypted, we can't do a simple WHERE clause.
+    // Load all active apps and compare decrypted keys.
+    const rows = this.db.prepare('SELECT * FROM apps WHERE active = 1').all() as any[]
+    for (const row of rows) {
+      if (this.decryptField(row.api_key) === apiKey) {
+        return this.rowToApp(row)
+      }
+    }
+    return null
+  }
+
+  updateApp(id: string, fields: Record<string, unknown>) {
+    const sets: string[] = []
+    const params: any[] = []
+
+    if (fields.name !== undefined) { sets.push('name = ?'); params.push(fields.name) }
+    if (fields.description !== undefined) { sets.push('description = ?'); params.push(fields.description) }
+    if (fields.webhookGlobalUrl !== undefined) { sets.push('webhook_global_url = ?'); params.push(fields.webhookGlobalUrl) }
+    if (fields.webhookSecret !== undefined) { sets.push('webhook_secret = ?'); params.push(this.encryptField(fields.webhookSecret as string)) }
+    if (fields.webhookEvents !== undefined) { sets.push('webhook_events = ?'); params.push(JSON.stringify(fields.webhookEvents)) }
+    if (fields.apiKey !== undefined) { sets.push('api_key = ?'); params.push(this.encryptField(fields.apiKey as string)) }
+    if (fields.permissions !== undefined) { sets.push('permissions = ?'); params.push(JSON.stringify(fields.permissions)) }
+    if (fields.scopeChatTypes !== undefined) { sets.push('scope_chat_types = ?'); params.push(JSON.stringify(fields.scopeChatTypes)) }
+    if (fields.scopeSpecificChats !== undefined) { sets.push('scope_specific_chats = ?'); params.push(JSON.stringify(fields.scopeSpecificChats)) }
+
+    if (sets.length === 0) return
+    params.push(id)
+    this.db.prepare(`UPDATE apps SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+  }
+
+  deactivateApp(id: string) {
+    this.db.prepare('UPDATE apps SET active = 0 WHERE id = ?').run(id)
+  }
+
+  // ─── Webhook Deliveries ────────────────────────────────────────────────────
+
+  insertDelivery(delivery: {
+    id: string
+    appId: string
+    event: string
+    payload: string
+    status: string
+  }) {
+    this.db.prepare(`
+      INSERT INTO webhook_deliveries (id, app_id, event, payload, status, attempts, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?)
+    `).run(
+      delivery.id,
+      delivery.appId,
+      delivery.event,
+      delivery.payload,
+      delivery.status,
+      Math.floor(Date.now() / 1000),
+    )
+  }
+
+  updateDelivery(id: string, fields: { status?: string; attempts?: number; lastAttemptAt?: number; responseStatus?: number }) {
+    const sets: string[] = []
+    const params: any[] = []
+
+    if (fields.status !== undefined) { sets.push('status = ?'); params.push(fields.status) }
+    if (fields.attempts !== undefined) { sets.push('attempts = ?'); params.push(fields.attempts) }
+    if (fields.lastAttemptAt !== undefined) { sets.push('last_attempt_at = ?'); params.push(fields.lastAttemptAt) }
+    if (fields.responseStatus !== undefined) { sets.push('response_status = ?'); params.push(fields.responseStatus) }
+
+    if (sets.length === 0) return
+    params.push(id)
+    this.db.prepare(`UPDATE webhook_deliveries SET ${sets.join(', ')} WHERE id = ?`).run(...params)
+  }
+
+  getDeliveries(filters: { appId?: string; status?: string; limit?: number } = {}) {
+    let sql = 'SELECT * FROM webhook_deliveries WHERE 1=1'
+    const params: any[] = []
+
+    if (filters.appId) { sql += ' AND app_id = ?'; params.push(filters.appId) }
+    if (filters.status) { sql += ' AND status = ?'; params.push(filters.status) }
+
+    sql += ' ORDER BY created_at DESC'
+
+    if (filters.limit) { sql += ' LIMIT ?'; params.push(filters.limit) }
+
+    return this.db.prepare(sql).all(...params)
+  }
+
+  getRetryingDeliveries() {
+    return this.db.prepare(
+      "SELECT * FROM webhook_deliveries WHERE status = 'retrying'"
+    ).all()
+  }
+
+  deleteOldDeliveries(beforeTimestamp: number): number {
+    const result = this.db.prepare('DELETE FROM webhook_deliveries WHERE created_at < ?').run(beforeTimestamp)
+    return result.changes
+  }
+
   // ─── Row mappers ───────────────────────────────────────────────────────────
 
   private rowToMessage(row: any): Message {
@@ -263,6 +461,23 @@ export class SQLiteStore {
       isGroup: !!row.is_group,
       lastMessageAt: new Date(row.last_message_at * 1000),
       unreadCount: row.unread_count,
+    }
+  }
+
+  private rowToApp(row: any) {
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      description: (row.description ?? '') as string,
+      webhookGlobalUrl: (row.webhook_global_url ?? '') as string,
+      webhookSecret: this.decryptField(row.webhook_secret),
+      webhookEvents: JSON.parse(row.webhook_events || '[]') as { name: string; url?: string }[],
+      apiKey: this.decryptField(row.api_key),
+      permissions: JSON.parse(row.permissions || '[]') as string[],
+      scopeChatTypes: JSON.parse(row.scope_chat_types || '[]') as string[],
+      scopeSpecificChats: JSON.parse(row.scope_specific_chats || '[]') as string[],
+      active: !!row.active,
+      createdAt: new Date(row.created_at * 1000),
     }
   }
 
