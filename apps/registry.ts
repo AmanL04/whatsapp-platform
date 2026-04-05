@@ -15,9 +15,11 @@ export interface RegisterAppInput {
 
 export class AppRegistry {
   private store: SQLiteStore
+  private appEnv: string
 
-  constructor(store: SQLiteStore) {
+  constructor(store: SQLiteStore, appEnv = 'local') {
     this.store = store
+    this.appEnv = appEnv
   }
 
   registerApp(input: RegisterAppInput): App {
@@ -25,6 +27,12 @@ export class AppRegistry {
     if (!input.webhookGlobalUrl) throw new Error('Webhook URL is required')
     if (!input.webhookEvents || input.webhookEvents.length === 0) {
       throw new Error('At least one event subscription is required')
+    }
+
+    // Validate all webhook URLs (global + per-event overrides)
+    this.validateWebhookUrl(input.webhookGlobalUrl)
+    for (const event of input.webhookEvents) {
+      if (event.url) this.validateWebhookUrl(event.url)
     }
 
     const id = 'app_' + crypto.randomBytes(12).toString('hex')
@@ -86,6 +94,12 @@ export class AppRegistry {
   }
 
   updateApp(id: string, fields: Partial<App>): void {
+    if (fields.webhookGlobalUrl) this.validateWebhookUrl(fields.webhookGlobalUrl)
+    if (fields.webhookEvents) {
+      for (const event of fields.webhookEvents) {
+        if (event.url) this.validateWebhookUrl(event.url)
+      }
+    }
     this.store.updateApp(id, fields)
   }
 
@@ -103,5 +117,41 @@ export class AppRegistry {
     const newSecret = 'whs_' + crypto.randomBytes(32).toString('hex')
     this.store.updateApp(id, { webhookSecret: newSecret })
     return newSecret
+  }
+
+  /** Block internal/private URLs to prevent SSRF attacks */
+  private validateWebhookUrl(url: string): void {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      throw new Error(`Invalid webhook URL: ${url}`)
+    }
+
+    // Must be HTTPS in non-local environments
+    if (this.appEnv !== 'local' && parsed.protocol !== 'https:') {
+      throw new Error('Webhook URL must use HTTPS')
+    }
+
+    // Block internal/private hostnames
+    const blocked = [
+      'localhost',
+      '127.0.0.1',
+      '0.0.0.0',
+      '::1',
+      '169.254.',     // link-local
+      '10.',          // private class A
+      '192.168.',     // private class C
+    ]
+    const hostname = parsed.hostname.toLowerCase()
+    for (const prefix of blocked) {
+      if (hostname === prefix || hostname.startsWith(prefix)) {
+        throw new Error(`Webhook URL cannot point to internal/private address: ${hostname}`)
+      }
+    }
+    // Block 172.16.0.0/12 (private class B)
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
+      throw new Error(`Webhook URL cannot point to internal/private address: ${hostname}`)
+    }
   }
 }

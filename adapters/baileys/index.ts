@@ -143,7 +143,7 @@ export class BaileysAdapter implements WAAdapter {
         }
       })
 
-      // Normalize messages, then store in batched transactions with event loop yields
+      // Normalize messages + extract media metadata
       const normalized: Message[] = []
       const rawJsons: string[] = []
       for (const raw of historyMsgs) {
@@ -153,6 +153,12 @@ export class BaileysAdapter implements WAAdapter {
         msg.groupName = msg.isGroup ? this.chatNames.get(msg.chatId) : undefined
         normalized.push(msg)
         rawJsons.push(JSON.stringify(raw))
+
+        // Store media metadata for non-text messages
+        if (msg.type !== 'text') {
+          const media = this.normaliseMedia(raw, msg)
+          if (media) this.store.upsertMedia(media)
+        }
       }
 
       // Store in chunks of 200, yielding to event loop between chunks

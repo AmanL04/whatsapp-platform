@@ -50,7 +50,7 @@ async function main() {
   const store = adapter.getStore()
 
   // 2. App registry + webhook dispatcher
-  const registry = new AppRegistry(store)
+  const registry = new AppRegistry(store, APP_ENV)
   const dispatcher = new WebhookDispatcher(registry, store)
 
   adapter.setEventDispatcher((event, payload, chatId, isGroup) => {
