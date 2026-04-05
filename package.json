@@ -1,32 +1,39 @@
 {
   "name": "whatsapp-platform",
   "version": "0.1.0",
-  "description": "Personal WhatsApp companion platform with plugin architecture",
+  "description": "Self-hosted WhatsApp infrastructure server with external app registration",
   "main": "index.ts",
   "scripts": {
     "dev": "tsx watch index.ts",
     "start": "tsx index.ts",
-    "typecheck": "tsc --noEmit"
+    "build": "cd dashboard && npm install && npx vite build",
+    "typecheck": "tsc --noEmit",
+    "reconnect": "tsx cli/reconnect.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.0",
     "better-sqlite3": "^11.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
+    "express-rate-limit": "^8.3.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
     "node-cron": "^3.0.3",
     "pino": "^9.0.0",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "tsx": "^4.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.0.0",
     "@types/node-cron": "^3.0.11",
-    "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   }
 }

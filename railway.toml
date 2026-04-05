@@ -1,0 +1,11 @@
+[build]
+builder = "nixpacks"
+# Install devDependencies during build (needed for vite, typescript)
+installCommand = "npm install --include=dev && npm run build"
+
+[deploy]
+startCommand = "npm run start"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

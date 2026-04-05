@@ -16,18 +16,28 @@ export class BaileysAdapter implements WAAdapter {
   private authDir: string
   private store: SQLiteStore
   private chatNames: Map<string, string> = new Map()
+  private dispatchEvent?: (event: string, payload: unknown, chatId: string, isGroup: boolean) => void
   private messageHandlers: ((msg: Message) => void)[] = []
   private mediaHandlers: ((media: Media) => void)[] = []
   private connectedHandlers: (() => void)[] = []
   private disconnectedHandlers: ((reason: string) => void)[] = []
 
-  constructor(authDir = './data/auth', dbPath = './data/whatsapp.db') {
+  constructor(authDir = './data/auth', dbPath = './data/whatsapp.db', dbEncryptionKey?: string) {
     this.authDir = authDir
-    this.store = new SQLiteStore(dbPath)
+    this.store = new SQLiteStore(dbPath, dbEncryptionKey)
   }
 
   getStore(): SQLiteStore {
     return this.store
+  }
+
+  setEventDispatcher(fn: (event: string, payload: unknown, chatId: string, isGroup: boolean) => void) {
+    this.dispatchEvent = fn
+  }
+
+  /** Returns the connected WhatsApp JID (e.g. for OTP sending) */
+  getOwnJid(): string | null {
+    return this.sock?.user?.id ?? null
   }
 
   async connect(): Promise<void> {
@@ -68,6 +78,7 @@ export class BaileysAdapter implements WAAdapter {
         if (chat.id && chat.name) {
           this.chatNames.set(chat.id, chat.name)
           this.store.upsertChat(chat.id, chat.name, chat.id.endsWith('@g.us'))
+          this.dispatchEvent?.('chat.updated', { id: chat.id, name: chat.name }, chat.id, chat.id.endsWith('@g.us'))
         }
       }
     })
@@ -77,6 +88,7 @@ export class BaileysAdapter implements WAAdapter {
         if (update.id && update.name) {
           this.chatNames.set(update.id, update.name)
           this.store.upsertChat(update.id, update.name, update.id.endsWith('@g.us'))
+          this.dispatchEvent?.('chat.updated', { id: update.id, name: update.name }, update.id, update.id.endsWith('@g.us'))
         }
       }
     })
@@ -127,14 +139,19 @@ export class BaileysAdapter implements WAAdapter {
         }
       }
 
-      // Store messages from history
+      // Store messages from history and dispatch in batches
+      const normalized: Message[] = []
       for (const raw of historyMsgs) {
         if (!raw.message) continue
         const msg = this.normaliseMessage(raw)
         if (!msg) continue
         msg.groupName = msg.isGroup ? this.chatNames.get(msg.chatId) : undefined
         this.store.upsertMessage(msg, JSON.stringify(raw))
+        normalized.push(msg)
       }
+
+      // Batched dispatch — 50 messages at a time with 100ms gaps
+      this.dispatchHistoryBatch(normalized)
     })
 
     this.sock.ev.on('messages.upsert', ({ messages }) => {
@@ -148,11 +165,16 @@ export class BaileysAdapter implements WAAdapter {
           this.store.upsertMessage(msg, JSON.stringify(raw))
           this.messageHandlers.forEach(h => h(msg))
 
+          // Dispatch to external apps
+          const eventName = msg.isFromMe ? 'message.sent' : 'message.received'
+          this.dispatchEvent?.(eventName, msg, msg.chatId, msg.isGroup)
+
           if (msg.type !== 'text') {
             const media = this.normaliseMedia(raw, msg)
             if (media) {
               this.store.upsertMedia(media)
               this.mediaHandlers.forEach(h => h(media))
+              this.dispatchEvent?.('media.received', media, msg.chatId, msg.isGroup)
             }
           }
         })
@@ -200,6 +222,27 @@ export class BaileysAdapter implements WAAdapter {
   onMedia(handler: (media: Media) => void) { this.mediaHandlers.push(handler) }
   onConnected(handler: () => void) { this.connectedHandlers.push(handler) }
   onDisconnected(handler: (reason: string) => void) { this.disconnectedHandlers.push(handler) }
+
+  // ─── History sync batched dispatch ──────────────────────────────────────────
+
+  private async dispatchHistoryBatch(messages: Message[]) {
+    if (!this.dispatchEvent || messages.length === 0) return
+
+    const BATCH_SIZE = 50
+    const BATCH_DELAY_MS = 100
+
+    console.log(`[baileys] dispatching ${messages.length} history messages in batches of ${BATCH_SIZE}`)
+    for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+      const batch = messages.slice(i, i + BATCH_SIZE)
+      for (const msg of batch) {
+        const eventName = msg.isFromMe ? 'message.sent' : 'message.received'
+        this.dispatchEvent(eventName, msg, msg.chatId, msg.isGroup)
+      }
+      if (i + BATCH_SIZE < messages.length) {
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+      }
+    }
+  }
 
   // ─── Group name resolution ─────────────────────────────────────────────────
 

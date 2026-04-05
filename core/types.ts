@@ -40,20 +40,26 @@ export interface MessageQuery {
   search?: string
 }
 
-/**
- * PluginContext — passed to every plugin run() call.
- * Uses a minimal adapter shape to avoid circular imports with adapter.ts.
- */
-export interface PluginContext {
-  adapter: {
-    getChats(): Promise<Chat[]>
-    getMessages(query: MessageQuery): Promise<Message[]>
-    searchMessages(text: string): Promise<Message[]>
-    sendMessage(chatId: string, content: string): Promise<void>
-    downloadMedia(mediaId: string): Promise<Buffer>
-  }
-  message?: Message
-  media?: Media
-  notify: (text: string) => void
-  log: (msg: string) => void
+// ─── App Registration Types ──────────────────────────────────────────────────
+
+export type Permission =
+  | 'messages.read'
+  | 'chats.read'
+  | 'media.read'
+  | 'media.download'
+  | 'messages.send'
+
+export interface App {
+  id: string
+  name: string
+  description: string
+  webhookGlobalUrl: string
+  webhookSecret: string
+  webhookEvents: { name: string; url?: string }[]
+  apiKey: string
+  permissions: Permission[]
+  scopeChatTypes: ('dm' | 'group')[]
+  scopeSpecificChats: string[]
+  active: boolean
+  createdAt: Date
 }
