@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
   const backendUrl = `http://localhost:${backendPort}`
 
   return {
+    base: '/dashboard/',
     plugins: [react(), tailwindcss()],
     server: {
       port: 5173,
