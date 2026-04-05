@@ -1,7 +1,7 @@
 {
   "name": "whatsapp-platform",
   "version": "0.1.0",
-  "description": "Personal WhatsApp companion platform with plugin architecture",
+  "description": "Self-hosted WhatsApp infrastructure server with external app registration",
   "main": "index.ts",
   "scripts": {
     "dev": "tsx watch index.ts",
@@ -10,7 +10,6 @@
     "reconnect": "tsx cli/reconnect.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.0",
     "better-sqlite3": "^11.0.0",

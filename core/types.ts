@@ -40,25 +40,6 @@ export interface MessageQuery {
   search?: string
 }
 
-/**
- * PluginContext — passed to every plugin run() call.
- * Uses a minimal adapter shape to avoid circular imports with adapter.ts.
- * TODO: Remove in Step 8 when plugins are deleted.
- */
-export interface PluginContext {
-  adapter: {
-    getChats(): Promise<Chat[]>
-    getMessages(query: MessageQuery): Promise<Message[]>
-    searchMessages(text: string): Promise<Message[]>
-    sendMessage(chatId: string, content: string): Promise<void>
-    downloadMedia(mediaId: string): Promise<Buffer>
-  }
-  message?: Message
-  media?: Media
-  notify: (text: string) => void
-  log: (msg: string) => void
-}
-
 // ─── App Registration Types ──────────────────────────────────────────────────
 
 export type Permission =

@@ -8,7 +8,6 @@ import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 
 import { BaileysAdapter } from './adapters/baileys'
-import { PluginRuntime } from './core/runtime'
 import { AppRegistry } from './apps/registry'
 import { WebhookDispatcher } from './apps/dispatcher'
 import { createApiAuthMiddleware } from './middleware/api-auth'
@@ -18,11 +17,6 @@ import { createDashboardApiRouter } from './routes/dashboard-api'
 import { cleanOldDeliveries } from './apps/cleanup'
 import type { EventName } from './core/events'
 import cron from 'node-cron'
-
-// Plugins (TODO: remove in Step 8)
-import dailySummary from './plugins/daily-summary'
-import contentRecap from './plugins/content-recap'
-import taskExtractor from './plugins/task-extractor'
 
 // ─── Environment validation ──────────────────────────────────────────────────
 
@@ -70,16 +64,9 @@ async function main() {
     if (n > 0) console.log(`[cleanup] daily: removed ${n} old delivery logs`)
   })
 
-  // 3. Plugins (TODO: remove in Step 8)
-  const runtime = new PluginRuntime(adapter)
-  runtime.register(dailySummary)
-  runtime.register(contentRecap)
-  runtime.register(taskExtractor)
-
-  // 4. Connect
+  // 3. Connect
   adapter.onConnected(() => {
-    console.log('[main] connected — plugin runtime + webhook dispatcher active')
-    runtime.start()
+    console.log('[main] connected — webhook dispatcher active')
   })
 
   adapter.onDisconnected((reason) => {
