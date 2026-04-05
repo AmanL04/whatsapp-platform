@@ -43,6 +43,7 @@ export interface MessageQuery {
 /**
  * PluginContext — passed to every plugin run() call.
  * Uses a minimal adapter shape to avoid circular imports with adapter.ts.
+ * TODO: Remove in Step 8 when plugins are deleted.
  */
 export interface PluginContext {
   adapter: {
@@ -56,4 +57,28 @@ export interface PluginContext {
   media?: Media
   notify: (text: string) => void
   log: (msg: string) => void
+}
+
+// ─── App Registration Types ──────────────────────────────────────────────────
+
+export type Permission =
+  | 'messages.read'
+  | 'chats.read'
+  | 'media.read'
+  | 'media.download'
+  | 'messages.send'
+
+export interface App {
+  id: string
+  name: string
+  description: string
+  webhookGlobalUrl: string
+  webhookSecret: string
+  webhookEvents: { name: string; url?: string }[]
+  apiKey: string
+  permissions: Permission[]
+  scopeChatTypes: ('dm' | 'group')[]
+  scopeSpecificChats: string[]
+  active: boolean
+  createdAt: Date
 }
