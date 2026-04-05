@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch index.ts",
     "start": "tsx index.ts",
+    "build": "cd dashboard && npm install && npx vite build",
     "typecheck": "tsc --noEmit",
     "reconnect": "tsx cli/reconnect.ts"
   },
@@ -22,7 +23,8 @@
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^3.0.3",
     "pino": "^9.0.0",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "tsx": "^4.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
@@ -32,7 +34,6 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.0.0",
     "@types/node-cron": "^3.0.11",
-    "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   }
 }

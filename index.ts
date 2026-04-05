@@ -139,7 +139,7 @@ async function main() {
   app.use('/dashboard', dashboardAuth.middleware(), dashboardRouter)
 
   // Serve built dashboard SPA in non-local environments
-  const dashboardDist = path.join(__dirname, 'dashboard', 'dist')
+  const dashboardDist = path.join(process.cwd(), 'dashboard', 'dist')
   if (fs.existsSync(dashboardDist) && APP_ENV !== 'local') {
     app.use('/dashboard', express.static(dashboardDist))
     app.get('/dashboard/*', (_req, res) => {

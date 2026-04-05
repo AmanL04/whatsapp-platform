@@ -4,4 +4,3 @@ data/
 dist/
 dashboard/node_modules/
 dashboard/dist/
-package-lock.json
