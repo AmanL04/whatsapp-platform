@@ -143,23 +143,73 @@ function MessagesTab() {
 
 interface MediaRecord { id: string; chat_id: string; type: string; mime_type: string; caption: string; timestamp: number; sender_name: string }
 
+const MEDIA_TYPES = ['image', 'video', 'audio', 'document']
+
 function MediaTab() {
-  const { data: media, loading } = useFetch<MediaRecord[]>(`${API}/media`)
-  if (loading) return <p className="p-6 text-gray-400">Loading media...</p>
+  const [typeFilter, setTypeFilter] = useState<string>('')
+  const [sourceFilter, setSourceFilter] = useState<string>('')
+  const [senderFilter, setSenderFilter] = useState<string>('')
+
+  const params = new URLSearchParams()
+  if (typeFilter) params.set('type', typeFilter)
+  if (sourceFilter) params.set('source', sourceFilter)
+  if (senderFilter) params.set('sender', senderFilter)
+  params.set('limit', '100')
+
+  const { data: media, loading } = useFetch<MediaRecord[]>(`${API}/media?${params}`, [typeFilter, sourceFilter, senderFilter])
+
   return (
     <div className="p-6">
       <h2 className="text-lg font-semibold mb-4">Recent Media</h2>
-      {(media ?? []).length === 0 ? <p className="text-gray-400">No media received yet.</p> : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {(media ?? []).map((m) => (
-            <div key={m.id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-              <div className="text-xs font-medium text-gray-500 uppercase">{m.type}</div>
-              <div className="text-sm mt-1 truncate">{m.caption || m.mime_type}</div>
-              <div className="text-xs text-gray-400 mt-1">{m.sender_name} &middot; {new Date(m.timestamp * 1000).toLocaleDateString()}</div>
-            </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-500">Source:</span>
+          {['', 'chat', 'story'].map(s => (
+            <button key={s} onClick={() => setSourceFilter(s)}
+              className={`px-2 py-1 rounded text-xs ${sourceFilter === s ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+              {s || 'All'}
+            </button>
           ))}
         </div>
-      )}
+
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-500">Type:</span>
+          <button onClick={() => setTypeFilter('')}
+            className={`px-2 py-1 rounded text-xs ${!typeFilter ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>All</button>
+          {MEDIA_TYPES.map(t => (
+            <button key={t} onClick={() => setTypeFilter(t)}
+              className={`px-2 py-1 rounded text-xs ${typeFilter === t ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{t}</button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-500">Sender:</span>
+          <input value={senderFilter} onChange={e => setSenderFilter(e.target.value)} placeholder="Search sender..."
+            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs bg-transparent w-36" />
+        </div>
+      </div>
+
+      {loading ? <p className="text-gray-400">Loading media...</p>
+        : (media ?? []).length === 0 ? <p className="text-gray-400">No media found.</p>
+        : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {(media ?? []).map((m) => (
+              <div key={m.id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-medium text-gray-500 uppercase">{m.type}</div>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${m.chat_id === 'status@broadcast' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                    {m.chat_id === 'status@broadcast' ? 'Story' : 'Chat'}
+                  </span>
+                </div>
+                <div className="text-sm mt-1 truncate">{m.caption || m.mime_type}</div>
+                <div className="text-xs text-gray-400 mt-1">{m.sender_name} &middot; {new Date(m.timestamp * 1000).toLocaleDateString()}</div>
+              </div>
+            ))}
+          </div>
+        )
+      }
     </div>
   )
 }

@@ -64,12 +64,16 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
     }
 
     try {
-      const media = store.getMedia() as any[]
+      const type = _req.query.type as string | undefined
+      const sender = _req.query.sender as string | undefined
+      const source = _req.query.source as 'chat' | 'story' | undefined
+      const limit = Number(_req.query.limit ?? 50)
+      const media = store.getMedia({ type, sender, source, limit }) as Record<string, unknown>[]
       const filtered = media.filter(m => {
         const isGroup = (m.chat_id as string)?.endsWith('@g.us') ?? false
         const chatType = isGroup ? 'group' : 'dm'
         if (!app.scopeChatTypes.includes(chatType as 'dm' | 'group')) return false
-        if (app.scopeSpecificChats.length > 0 && !app.scopeSpecificChats.includes(m.chat_id)) return false
+        if (app.scopeSpecificChats.length > 0 && !app.scopeSpecificChats.includes(m.chat_id as string)) return false
         return true
       })
       res.json(filtered)

@@ -150,9 +150,13 @@ export function createDashboardApiRouter(
     }
   })
 
-  router.get('/api/media', (_req, res) => {
+  router.get('/api/media', (req, res) => {
     try {
-      const media = store.getMedia()
+      const type = req.query.type as string | undefined
+      const sender = req.query.sender as string | undefined
+      const source = req.query.source as 'chat' | 'story' | undefined
+      const limit = Number(req.query.limit ?? 50)
+      const media = store.getMedia({ type, sender, source, limit })
       res.json(media)
     } catch (err) {
       res.status(500).json({ error: String(err) })

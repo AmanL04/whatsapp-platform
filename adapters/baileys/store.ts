@@ -209,8 +209,28 @@ export class SQLiteStore {
     )
   }
 
-  getMedia(limit = 50) {
-    return this.db.prepare('SELECT * FROM media ORDER BY timestamp DESC LIMIT ?').all(limit)
+  getMedia(filters: { type?: string; sender?: string; source?: 'chat' | 'story'; limit?: number } = {}) {
+    let sql = 'SELECT * FROM media WHERE 1=1'
+    const params: (string | number)[] = []
+
+    if (filters.type) {
+      sql += ' AND type = ?'
+      params.push(filters.type)
+    }
+    if (filters.sender) {
+      sql += ' AND sender_name LIKE ?'
+      params.push(`%${filters.sender}%`)
+    }
+    if (filters.source === 'story') {
+      sql += " AND chat_id = 'status@broadcast'"
+    } else if (filters.source === 'chat') {
+      sql += " AND chat_id != 'status@broadcast'"
+    }
+
+    sql += ' ORDER BY timestamp DESC LIMIT ?'
+    params.push(filters.limit ?? 50)
+
+    return this.db.prepare(sql).all(...params)
   }
 
   // ─── Encryption helpers ─────────────────────────────────────────────────────
