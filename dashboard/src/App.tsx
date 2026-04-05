@@ -17,15 +17,20 @@ interface Delivery { id: string; app_id: string; event: string; status: string; 
 function useFetch<T>(url: string, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
-  useEffect(() => {
+
+  const doFetch = useCallback(() => {
     setLoading(true)
     fetch(url, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(setData)
+      .then((d: T | null) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, deps)
-  return { data, loading, refetch: () => { setLoading(true); fetch(url, { credentials: 'include' }).then(r => r.ok ? r.json() : null).then(setData).catch(() => setData(null)).finally(() => setLoading(false)) } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, ...deps])
+
+  useEffect(() => { doFetch() }, [doFetch])
+
+  return { data, loading, refetch: doFetch }
 }
 
 // ─── Login Screen ────────────────────────────────────────────────────────────
@@ -136,15 +141,17 @@ function MessagesTab() {
 
 // ─── Media Tab ───────────────────────────────────────────────────────────────
 
+interface MediaRecord { id: string; chat_id: string; type: string; mime_type: string; caption: string; timestamp: number; sender_name: string }
+
 function MediaTab() {
-  const { data: media, loading } = useFetch<any[]>(`${API}/media`)
+  const { data: media, loading } = useFetch<MediaRecord[]>(`${API}/media`)
   if (loading) return <p className="p-6 text-gray-400">Loading media...</p>
   return (
     <div className="p-6">
       <h2 className="text-lg font-semibold mb-4">Recent Media</h2>
       {(media ?? []).length === 0 ? <p className="text-gray-400">No media received yet.</p> : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {(media ?? []).map((m: any) => (
+          {(media ?? []).map((m) => (
             <div key={m.id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
               <div className="text-xs font-medium text-gray-500 uppercase">{m.type}</div>
               <div className="text-sm mt-1 truncate">{m.caption || m.mime_type}</div>
@@ -198,7 +205,9 @@ function AppsTab() {
         setName(''); setDescription(''); setWebhookUrl(''); setEvents([]); setPermissions([])
         refetch()
       }
-    } catch {}
+    } catch (err) {
+      console.error('Failed to create app:', err)
+    }
   }
 
   const deactivate = async (id: string) => {
@@ -286,7 +295,7 @@ function AppsTab() {
               <button onClick={() => deactivate(app.id)} className="text-xs text-red-500 hover:underline">Deactivate</button>
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
-              {app.webhookEvents.map((e: any) => (
+              {app.webhookEvents.map((e: { name: string; url?: string }) => (
                 <span key={e.name} className="px-1.5 py-0.5 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded text-xs">{e.name}</span>
               ))}
             </div>
