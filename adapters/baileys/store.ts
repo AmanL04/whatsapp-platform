@@ -94,6 +94,20 @@ export class SQLiteStore {
     `)
   }
 
+  // ─── Batch operations ───────────────────────────────────────────────────────
+
+  /** Wrap multiple inserts in a single transaction — much faster for bulk writes */
+  runInTransaction(fn: () => void) {
+    this.db.exec('BEGIN')
+    try {
+      fn()
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
+  }
+
   // ─── Messages ──────────────────────────────────────────────────────────────
 
   upsertMessage(msg: Message, rawJson?: string) {

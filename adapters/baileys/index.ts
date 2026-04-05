@@ -133,27 +133,33 @@ export class BaileysAdapter implements WAAdapter {
     this.sock.ev.on('messaging-history.set', ({ messages: historyMsgs, chats: historyChats }) => {
       console.log(`[baileys] history sync: ${historyMsgs.length} messages, ${historyChats.length} chats`)
 
-      // Store chat names from history
-      for (const chat of historyChats) {
-        if (chat.id && chat.name) {
-          this.chatNames.set(chat.id, chat.name)
-          this.store.upsertChat(chat.id, chat.name, chat.id.endsWith('@g.us'))
+      // Store chat names in a transaction
+      this.store.runInTransaction(() => {
+        for (const chat of historyChats) {
+          if (chat.id && chat.name) {
+            this.chatNames.set(chat.id, chat.name)
+            this.store.upsertChat(chat.id, chat.name, chat.id.endsWith('@g.us'))
+          }
         }
-      }
+      })
 
-      // Store messages from history and dispatch in batches
+      // Normalize messages, then store in batched transactions with event loop yields
       const normalized: Message[] = []
+      const rawJsons: string[] = []
       for (const raw of historyMsgs) {
         if (!raw.message) continue
         const msg = this.normaliseMessage(raw)
         if (!msg) continue
         msg.groupName = msg.isGroup ? this.chatNames.get(msg.chatId) : undefined
-        this.store.upsertMessage(msg, JSON.stringify(raw))
         normalized.push(msg)
+        rawJsons.push(JSON.stringify(raw))
       }
 
-      // Batched dispatch — 50 messages at a time with 100ms gaps
-      this.dispatchHistoryBatch(normalized)
+      // Store in chunks of 200, yielding to event loop between chunks
+      // so Express can respond to health checks
+      this.storeHistoryBatch(normalized, rawJsons).then(() => {
+        this.dispatchHistoryBatch(normalized)
+      })
     })
 
     this.sock.ev.on('messages.upsert', ({ messages }) => {
@@ -224,6 +230,24 @@ export class BaileysAdapter implements WAAdapter {
   onMedia(handler: (media: Media) => void) { this.mediaHandlers.push(handler) }
   onConnected(handler: () => void) { this.connectedHandlers.push(handler) }
   onDisconnected(handler: (reason: string) => void) { this.disconnectedHandlers.push(handler) }
+
+  // ─── History sync batched storage + dispatch ───────────────────────────────
+
+  private async storeHistoryBatch(messages: Message[], rawJsons: string[]) {
+    const CHUNK = 200
+    for (let i = 0; i < messages.length; i += CHUNK) {
+      const end = Math.min(i + CHUNK, messages.length)
+      this.store.runInTransaction(() => {
+        for (let j = i; j < end; j++) {
+          this.store.upsertMessage(messages[j], rawJsons[j])
+        }
+      })
+      // Yield to event loop so Express can serve health checks
+      if (i + CHUNK < messages.length) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+    }
+  }
 
   // ─── History sync batched dispatch ──────────────────────────────────────────
 
