@@ -4,12 +4,12 @@
   "description": "Self-hosted WhatsApp infrastructure server with external app registration",
   "main": "index.ts",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "dev": "tsx watch index.ts",
     "start": "tsx index.ts",
-    "build": "cd dashboard && npm install && npx vite build",
+    "build": "cd dashboard && rm -f package-lock.json && npm install && npx vite build",
     "typecheck": "tsc --noEmit",
     "reconnect": "tsx cli/reconnect.ts"
   },
