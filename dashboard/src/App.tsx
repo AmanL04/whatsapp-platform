@@ -39,7 +39,7 @@ interface Summary {
   created_at: number
 }
 
-const API = '/api'
+const API = '/dashboard/api'
 
 function useFetch<T>(url: string, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null)
