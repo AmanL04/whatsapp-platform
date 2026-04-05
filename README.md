@@ -48,7 +48,7 @@ npm install
 npm run dev
 ```
 
-Opens at `http://localhost:5173`. Proxies API calls to the server on port 3100.
+Opens at `http://localhost:5173`. Proxies API calls to the server on port 6745.
 
 ## Architecture
 
@@ -163,7 +163,7 @@ Deploy triggers automatically. Check the deployment logs for a QR code — scan 
 | `JWT_SECRET` | Yes | Signs dashboard JWT tokens |
 | `DB_ENCRYPTION_SECRET` | Yes | Encrypts sensitive DB columns |
 | `DASHBOARD_ORIGIN` | No | CORS origin for dashboard. Auto-detected on Railway via `RAILWAY_PUBLIC_DOMAIN`. Only set manually if not on Railway. |
-| `PORT` | No | Server port (default: 3100) |
+| `PORT` | No | Server port (default: 6745) |
 
 ## Project Structure
 

@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx watch index.ts",
     "start": "tsx index.ts",
-    "build": "cd dashboard && rm -f package-lock.json && npm install && npx vite build",
+    "build": "cd dashboard && npm install && npx vite build",
     "typecheck": "tsc --noEmit",
     "reconnect": "tsx cli/reconnect.ts"
   },

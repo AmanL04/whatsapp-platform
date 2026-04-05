@@ -21,7 +21,7 @@ import cron from 'node-cron'
 // ─── Environment validation ──────────────────────────────────────────────────
 
 const APP_ENV = process.env.APP_ENV ?? 'local'
-const PORT = Number(process.env.PORT ?? 3100)
+const PORT = Number(process.env.PORT ?? 6745)
 
 if (!process.env.JWT_SECRET) {
   console.error('[fatal] JWT_SECRET is not set in .env. Server cannot start.')

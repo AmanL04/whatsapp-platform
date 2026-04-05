@@ -1,0 +1,8 @@
+node_modules/
+dashboard/node_modules/
+dashboard/dist/
+data/
+.env
+.git/
+*.md
+.claude/

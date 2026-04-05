@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => {
   // Load .env from the parent directory (where the server's .env lives)
   const env = loadEnv(mode, '..', '')
-  const backendPort = env.PORT || '3100'
+  const backendPort = env.PORT || '6745'
   const backendUrl = `http://localhost:${backendPort}`
 
   return {
