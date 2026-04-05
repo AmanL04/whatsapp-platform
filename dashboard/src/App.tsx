@@ -14,23 +14,23 @@ interface Delivery { id: string; app_id: string; event: string; payload: string;
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
-function useFetch<T>(url: string, deps: unknown[] = []) {
+function useFetch<T>(url: string) {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
+  const [fetchKey, setFetchKey] = useState(0)
 
-  const doFetch = useCallback(() => {
-    setLoading(true)
-    fetch(url, { credentials: 'include' })
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+    fetch(url, { credentials: 'include', signal: controller.signal })
       .then(r => r.ok ? r.json() : null)
-      .then((d: T | null) => setData(d))
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, ...deps])
+      .then((d: T | null) => { if (!cancelled) { setData(d); setLoading(false) } })
+      .catch(() => { if (!cancelled) { setData(null); setLoading(false) } })
+    return () => { cancelled = true; controller.abort() }
+  }, [url, fetchKey])
 
-  useEffect(() => { doFetch() }, [doFetch])
-
-  return { data, loading, refetch: doFetch }
+  const refetch = useCallback(() => setFetchKey(k => k + 1), [])
+  return { data, loading, refetch }
 }
 
 // ─── Login Screen ────────────────────────────────────────────────────────────
@@ -104,7 +104,6 @@ function MessagesTab() {
   const [selectedChat, setSelectedChat] = useState<string | null>(null)
   const { data: messages, loading: msgsLoading } = useFetch<Message[]>(
     selectedChat ? `${API}/messages?chatId=${selectedChat}&limit=100` : `${API}/messages?limit=100`,
-    [selectedChat],
   )
 
   return (
@@ -156,7 +155,7 @@ function MediaTab() {
   if (senderFilter) params.set('sender', senderFilter)
   params.set('limit', '100')
 
-  const { data: media, loading } = useFetch<MediaRecord[]>(`${API}/media?${params}`, [typeFilter, sourceFilter, senderFilter])
+  const { data: media, loading } = useFetch<MediaRecord[]>(`${API}/media?${params}`)
 
   return (
     <div className="p-6">
