@@ -138,14 +138,18 @@ async function main() {
     }))
   }
 
+  // Serve built dashboard SPA in non-local environments (before auth middleware)
+  const dashboardDist = path.join(process.cwd(), 'dashboard', 'dist')
+  if (fs.existsSync(dashboardDist) && APP_ENV !== 'local') {
+    app.use('/dashboard', express.static(dashboardDist))
+  }
+
   // Dashboard auth + API routes
   const dashboardRouter = createDashboardApiRouter(adapter, store, registry, dashboardAuth)
   app.use('/dashboard', dashboardAuth.middleware(), dashboardRouter)
 
-  // Serve built dashboard SPA in non-local environments
-  const dashboardDist = path.join(process.cwd(), 'dashboard', 'dist')
+  // SPA catch-all — serves index.html for client-side routing (after API routes)
   if (fs.existsSync(dashboardDist) && APP_ENV !== 'local') {
-    app.use('/dashboard', express.static(dashboardDist))
     app.get('/dashboard/*', (_req, res) => {
       res.sendFile(path.join(dashboardDist, 'index.html'))
     })
