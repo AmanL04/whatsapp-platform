@@ -150,37 +150,10 @@ export function createDashboardApiRouter(
     }
   })
 
-  router.get('/api/tasks', (_req, res) => {
-    try {
-      const tasks = store.getTasks()
-      res.json(tasks)
-    } catch (err) {
-      res.status(500).json({ error: String(err) })
-    }
-  })
-
-  router.post('/api/tasks/:id/done', (req, res) => {
-    try {
-      store.markTaskDone(Number(req.params.id))
-      res.json({ ok: true })
-    } catch (err) {
-      res.status(500).json({ error: String(err) })
-    }
-  })
-
   router.get('/api/media', (_req, res) => {
     try {
       const media = store.getMedia()
       res.json(media)
-    } catch (err) {
-      res.status(500).json({ error: String(err) })
-    }
-  })
-
-  router.get('/api/summaries', (_req, res) => {
-    try {
-      const summaries = store.getSummaries()
-      res.json(summaries)
     } catch (err) {
       res.status(500).json({ error: String(err) })
     }

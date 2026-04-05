@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 
-type Tab = 'messages' | 'tasks' | 'media' | 'summary' | 'apps' | 'logs'
+type Tab = 'messages' | 'media' | 'apps' | 'logs'
 
 const API = '/dashboard/api'
 const AUTH = '/dashboard/auth'
@@ -9,8 +9,6 @@ const AUTH = '/dashboard/auth'
 
 interface Chat { id: string; name: string; isGroup: boolean; lastMessageAt: string; unreadCount: number }
 interface Message { id: string; chatId: string; senderName: string; content: string; type: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string }
-interface Task { id: number; from_name: string; content: string; confidence: string; score: number; created_at: number; done: number; chat_id: string }
-interface Summary { id: number; content: string; created_at: number }
 interface AppRecord { id: string; name: string; description: string; webhookGlobalUrl: string; webhookSecret: string; webhookEvents: { name: string; url?: string }[]; apiKey: string; permissions: string[]; scopeChatTypes: string[]; scopeSpecificChats: string[]; active: boolean; createdAt: string }
 interface Delivery { id: string; app_id: string; event: string; status: string; attempts: number; last_attempt_at: number; response_status: number; created_at: number }
 
@@ -136,39 +134,6 @@ function MessagesTab() {
   )
 }
 
-// ─── Tasks Tab ───────────────────────────────────────────────────────────────
-
-function TasksTab() {
-  const { data: tasks, loading } = useFetch<Task[]>(`${API}/tasks`)
-  const [localTasks, setLocalTasks] = useState<Task[]>([])
-  useEffect(() => { if (tasks) setLocalTasks(tasks) }, [tasks])
-
-  const markDone = async (id: number) => {
-    await fetch(`${API}/tasks/${id}/done`, { method: 'POST', credentials: 'include' })
-    setLocalTasks(prev => prev.filter(t => t.id !== id))
-  }
-
-  if (loading) return <p className="p-6 text-gray-400">Loading tasks...</p>
-  return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <h2 className="text-lg font-semibold mb-4">Detected Tasks</h2>
-      {localTasks.length === 0 ? <p className="text-gray-400">No open tasks.</p> : (
-        <div className="space-y-3">{localTasks.map(task => (
-          <div key={task.id} className="flex items-start gap-3 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-            <button onClick={() => markDone(task.id)} className="mt-0.5 w-5 h-5 rounded border-2 border-gray-300 hover:border-green-500 flex-shrink-0 hover:bg-green-50" />
-            <div className="flex-1 min-w-0">
-              <div className="text-sm">{task.content}</div>
-              <div className="text-xs text-gray-400 mt-1">
-                From {task.from_name} &middot; <span className={task.confidence === 'high' ? 'text-red-500' : task.confidence === 'medium' ? 'text-yellow-500' : 'text-gray-400'}>{task.confidence}</span> &middot; {new Date(task.created_at * 1000).toLocaleDateString()}
-              </div>
-            </div>
-          </div>
-        ))}</div>
-      )}
-    </div>
-  )
-}
-
 // ─── Media Tab ───────────────────────────────────────────────────────────────
 
 function MediaTab() {
@@ -187,26 +152,6 @@ function MediaTab() {
             </div>
           ))}
         </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Summary Tab ─────────────────────────────────────────────────────────────
-
-function SummaryTab() {
-  const { data: summaries, loading } = useFetch<Summary[]>(`${API}/summaries`)
-  if (loading) return <p className="p-6 text-gray-400">Loading summaries...</p>
-  return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <h2 className="text-lg font-semibold mb-4">Daily Summaries</h2>
-      {(summaries ?? []).length === 0 ? <p className="text-gray-400">No summaries yet.</p> : (
-        <div className="space-y-4">{(summaries ?? []).map(s => (
-          <div key={s.id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-2">{new Date(s.created_at * 1000).toLocaleString()}</div>
-            <div className="text-sm whitespace-pre-wrap">{s.content}</div>
-          </div>
-        ))}</div>
       )}
     </div>
   )
@@ -415,9 +360,7 @@ function LogsTab() {
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'messages', label: 'Messages' },
-  { id: 'tasks', label: 'Tasks' },
   { id: 'media', label: 'Media' },
-  { id: 'summary', label: 'Summary' },
   { id: 'apps', label: 'Apps' },
   { id: 'logs', label: 'Logs' },
 ]
@@ -450,9 +393,7 @@ export default function App() {
       </nav>
 
       {tab === 'messages' && <MessagesTab />}
-      {tab === 'tasks' && <TasksTab />}
       {tab === 'media' && <MediaTab />}
-      {tab === 'summary' && <SummaryTab />}
       {tab === 'apps' && <AppsTab />}
       {tab === 'logs' && <LogsTab />}
     </div>

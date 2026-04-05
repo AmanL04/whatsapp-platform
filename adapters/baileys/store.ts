@@ -43,18 +43,6 @@ export class SQLiteStore {
         unread_count INTEGER DEFAULT 0
       );
 
-      CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id TEXT,
-        chat_id TEXT,
-        from_name TEXT,
-        content TEXT,
-        confidence TEXT,
-        score INTEGER,
-        created_at INTEGER,
-        done INTEGER DEFAULT 0
-      );
-
       CREATE TABLE IF NOT EXISTS media (
         id TEXT PRIMARY KEY,
         chat_id TEXT,
@@ -68,7 +56,9 @@ export class SQLiteStore {
 
       CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, timestamp);
       CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(timestamp);
-      CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
+
+      DROP TABLE IF EXISTS tasks;
+      DROP TABLE IF EXISTS summaries;
 
       CREATE TABLE IF NOT EXISTS apps (
         id TEXT PRIMARY KEY,
@@ -201,33 +191,6 @@ export class SQLiteStore {
     ).all().map(this.rowToChat)
   }
 
-  // ─── Tasks ─────────────────────────────────────────────────────────────────
-
-  insertTask(task: {
-    messageId: string
-    chatId: string
-    fromName: string
-    content: string
-    confidence: string
-    score: number
-  }) {
-    this.db.prepare(`
-      INSERT INTO tasks (message_id, chat_id, from_name, content, confidence, score, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(task.messageId, task.chatId, task.fromName, task.content, task.confidence, task.score, Math.floor(Date.now() / 1000))
-  }
-
-  getTasks(includeDone = false) {
-    const sql = includeDone
-      ? 'SELECT * FROM tasks ORDER BY created_at DESC'
-      : 'SELECT * FROM tasks WHERE done = 0 ORDER BY created_at DESC'
-    return this.db.prepare(sql).all()
-  }
-
-  markTaskDone(id: number) {
-    this.db.prepare('UPDATE tasks SET done = 1 WHERE id = ?').run(id)
-  }
-
   // ─── Media ─────────────────────────────────────────────────────────────────
 
   upsertMedia(media: Media) {
@@ -248,29 +211,6 @@ export class SQLiteStore {
 
   getMedia(limit = 50) {
     return this.db.prepare('SELECT * FROM media ORDER BY timestamp DESC LIMIT ?').all(limit)
-  }
-
-  // ─── Summaries (simple key-value for plugin output) ────────────────────────
-
-  // We'll store daily summaries in a simple table
-  ensureSummariesTable() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS summaries (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        content TEXT,
-        created_at INTEGER
-      )
-    `)
-  }
-
-  insertSummary(content: string) {
-    this.ensureSummariesTable()
-    this.db.prepare('INSERT INTO summaries (content, created_at) VALUES (?, ?)').run(content, Math.floor(Date.now() / 1000))
-  }
-
-  getSummaries(limit = 10) {
-    this.ensureSummariesTable()
-    return this.db.prepare('SELECT * FROM summaries ORDER BY created_at DESC LIMIT ?').all(limit)
   }
 
   // ─── Encryption helpers ─────────────────────────────────────────────────────
