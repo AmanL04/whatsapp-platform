@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Self-hosted WhatsApp infrastructure server with external app registration",
   "main": "index.ts",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx watch index.ts",
     "start": "tsx index.ts",
