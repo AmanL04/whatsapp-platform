@@ -139,14 +139,19 @@ export class BaileysAdapter implements WAAdapter {
         }
       }
 
-      // Store messages from history
+      // Store messages from history and dispatch in batches
+      const normalized: Message[] = []
       for (const raw of historyMsgs) {
         if (!raw.message) continue
         const msg = this.normaliseMessage(raw)
         if (!msg) continue
         msg.groupName = msg.isGroup ? this.chatNames.get(msg.chatId) : undefined
         this.store.upsertMessage(msg, JSON.stringify(raw))
+        normalized.push(msg)
       }
+
+      // Batched dispatch — 50 messages at a time with 100ms gaps
+      this.dispatchHistoryBatch(normalized)
     })
 
     this.sock.ev.on('messages.upsert', ({ messages }) => {
@@ -217,6 +222,27 @@ export class BaileysAdapter implements WAAdapter {
   onMedia(handler: (media: Media) => void) { this.mediaHandlers.push(handler) }
   onConnected(handler: () => void) { this.connectedHandlers.push(handler) }
   onDisconnected(handler: (reason: string) => void) { this.disconnectedHandlers.push(handler) }
+
+  // ─── History sync batched dispatch ──────────────────────────────────────────
+
+  private async dispatchHistoryBatch(messages: Message[]) {
+    if (!this.dispatchEvent || messages.length === 0) return
+
+    const BATCH_SIZE = 50
+    const BATCH_DELAY_MS = 100
+
+    console.log(`[baileys] dispatching ${messages.length} history messages in batches of ${BATCH_SIZE}`)
+    for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+      const batch = messages.slice(i, i + BATCH_SIZE)
+      for (const msg of batch) {
+        const eventName = msg.isFromMe ? 'message.sent' : 'message.received'
+        this.dispatchEvent(eventName, msg, msg.chatId, msg.isGroup)
+      }
+      if (i + BATCH_SIZE < messages.length) {
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+      }
+    }
+  }
 
   // ─── Group name resolution ─────────────────────────────────────────────────
 
