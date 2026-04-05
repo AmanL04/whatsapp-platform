@@ -54,7 +54,9 @@ export class BaileysAdapter implements WAAdapter {
 
     this.sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
       if (qr) {
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`
         console.log('[baileys] scan QR code to connect:')
+        console.log(`[baileys] QR URL: ${qrUrl}`)
         qrcode.generate(qr, { small: true })
       }
       if (connection === 'open') {
