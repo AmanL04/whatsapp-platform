@@ -10,7 +10,7 @@ const AUTH = '/dashboard/auth'
 interface Chat { id: string; name: string; isGroup: boolean; lastMessageAt: string; unreadCount: number }
 interface Message { id: string; chatId: string; senderName: string; content: string; type: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string }
 interface AppRecord { id: string; name: string; description: string; webhookGlobalUrl: string; webhookSecret: string; webhookEvents: { name: string; url?: string }[]; apiKey: string; permissions: string[]; scopeChatTypes: string[]; scopeSpecificChats: string[]; active: boolean; createdAt: string }
-interface Delivery { id: string; app_id: string; event: string; status: string; attempts: number; last_attempt_at: number; response_status: number; created_at: number }
+interface Delivery { id: string; app_id: string; event: string; payload: string; status: string; attempts: number; last_attempt_at: number; response_status: number; created_at: number }
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
@@ -314,6 +314,7 @@ function AppsTab() {
 function LogsTab() {
   const { data: deliveries, loading, refetch } = useFetch<Delivery[]>(`${API}/deliveries?limit=200`)
   const { data: apps } = useFetch<AppRecord[]>(`${API}/apps`)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // Auto-refresh every 30s
   useEffect(() => {
@@ -322,6 +323,11 @@ function LogsTab() {
   }, [refetch])
 
   const appName = useCallback((id: string) => apps?.find(a => a.id === id)?.name ?? id, [apps])
+
+  const formatPayload = (raw: string) => {
+    try { return JSON.stringify(JSON.parse(raw), null, 2) }
+    catch { return raw }
+  }
 
   if (loading) return <p className="p-6 text-gray-400">Loading delivery logs...</p>
 
@@ -347,8 +353,9 @@ function LogsTab() {
               </tr>
             </thead>
             <tbody>
-              {(deliveries ?? []).map(d => (
-                <tr key={d.id} className="border-b border-gray-100 dark:border-gray-800">
+              {(deliveries ?? []).map(d => (<>
+                <tr key={d.id} className="border-b border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                  onClick={() => setExpandedId(expandedId === d.id ? null : d.id)}>
                   <td className="py-2 pr-4 text-xs text-gray-400">{new Date(d.created_at * 1000).toLocaleString()}</td>
                   <td className="py-2 pr-4 text-xs">{appName(d.app_id)}</td>
                   <td className="py-2 pr-4 text-xs font-mono">{d.event}</td>
@@ -356,7 +363,14 @@ function LogsTab() {
                   <td className="py-2 pr-4 text-xs">{d.attempts}</td>
                   <td className="py-2 text-xs">{d.response_status || '-'}</td>
                 </tr>
-              ))}
+                {expandedId === d.id && d.payload && (
+                  <tr key={`${d.id}-payload`} className="border-b border-gray-100 dark:border-gray-800">
+                    <td colSpan={6} className="p-3">
+                      <pre className="text-xs bg-gray-100 dark:bg-gray-900 rounded-lg p-3 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap">{formatPayload(d.payload)}</pre>
+                    </td>
+                  </tr>
+                )}
+              </>))}
             </tbody>
           </table>
         </div>
