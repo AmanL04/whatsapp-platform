@@ -153,17 +153,7 @@ DB_ENCRYPTION_SECRET=<generate-a-different-random-secret>
 
 ### 5. First deploy
 
-Deploy triggers automatically. Check the deployment logs for a QR code — scan it with WhatsApp.
-
-### 6. Set dashboard origin
-
-After the first deploy, Railway assigns a domain. Add it:
-
-```
-DASHBOARD_ORIGIN=https://your-app.up.railway.app
-```
-
-Redeploy. The dashboard is now accessible and locked to this origin.
+Deploy triggers automatically. Check the deployment logs for a QR code — scan it with WhatsApp. The dashboard CORS origin is auto-detected from Railway's `RAILWAY_PUBLIC_DOMAIN` — no manual step needed.
 
 ## Environment Variables
 
@@ -172,7 +162,7 @@ Redeploy. The dashboard is now accessible and locked to this origin.
 | `APP_ENV` | Yes | `local`, `dev`, or `prod` |
 | `JWT_SECRET` | Yes | Signs dashboard JWT tokens |
 | `DB_ENCRYPTION_SECRET` | Yes | Encrypts sensitive DB columns |
-| `DASHBOARD_ORIGIN` | In dev/prod | CORS origin for dashboard |
+| `DASHBOARD_ORIGIN` | No | CORS origin for dashboard. Auto-detected on Railway via `RAILWAY_PUBLIC_DOMAIN`. Only set manually if not on Railway. |
 | `PORT` | No | Server port (default: 3100) |
 
 ## Project Structure

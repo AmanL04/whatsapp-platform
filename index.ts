@@ -31,8 +31,12 @@ if (!process.env.DB_ENCRYPTION_SECRET) {
   console.error('[fatal] DB_ENCRYPTION_SECRET is not set in .env. Server cannot start.')
   process.exit(1)
 }
-if ((APP_ENV === 'prod' || APP_ENV === 'dev') && !process.env.DASHBOARD_ORIGIN) {
-  console.error(`[fatal] DASHBOARD_ORIGIN is required when APP_ENV=${APP_ENV}. Server cannot start.`)
+// Resolve dashboard origin: explicit env var > Railway's auto-provided domain > none (local dev)
+const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN
+  ?? (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : undefined)
+
+if ((APP_ENV === 'prod' || APP_ENV === 'dev') && !DASHBOARD_ORIGIN) {
+  console.error(`[fatal] DASHBOARD_ORIGIN (or RAILWAY_PUBLIC_DOMAIN) is required when APP_ENV=${APP_ENV}. Server cannot start.`)
   process.exit(1)
 }
 
@@ -129,7 +133,7 @@ async function main() {
     app.use('/dashboard', cors())
   } else {
     app.use('/dashboard', cors({
-      origin: process.env.DASHBOARD_ORIGIN,
+      origin: DASHBOARD_ORIGIN,
       credentials: true,
     }))
   }
