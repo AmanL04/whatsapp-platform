@@ -1,8 +1,8 @@
-import type { Chat, Message, Media, MessageQuery } from './types'
+import type { Chat, Message, MessageQuery } from './types'
 
 /**
  * WAAdapter — the contract every connection layer must implement.
- * Plugins talk to this interface only. Never import from adapters/ directly.
+ * Apps talk to this interface only. Never import from adapters/ directly.
  */
 export interface WAAdapter {
   // Lifecycle
@@ -18,12 +18,12 @@ export interface WAAdapter {
   // Write
   sendMessage(chatId: string, content: string): Promise<void>
 
-  // Media
+  // Media — downloads on demand from WhatsApp via raw_json
   downloadMedia(mediaId: string): Promise<Buffer>
 
-  // Events — plugins subscribe to these
+  // Events
   onMessage(handler: (msg: Message) => void): void
-  onMedia(handler: (media: Media) => void): void
+  onMedia(handler: (media: Message) => void): void
   onConnected(handler: () => void): void
   onDisconnected(handler: (reason: string) => void): void
 }

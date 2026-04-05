@@ -8,7 +8,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import type { WAAdapter } from '../../core/adapter'
-import type { Chat, Message, Media, MessageQuery } from '../../core/types'
+import type { Chat, Message, MessageQuery } from '../../core/types'
 import { SQLiteStore } from './store'
 
 export class BaileysAdapter implements WAAdapter {
@@ -18,7 +18,6 @@ export class BaileysAdapter implements WAAdapter {
   private chatNames: Map<string, string> = new Map()
   private dispatchEvent?: (event: string, payload: unknown, chatId: string, isGroup: boolean) => void
   private messageHandlers: ((msg: Message) => void)[] = []
-  private mediaHandlers: ((media: Media) => void)[] = []
   private connectedHandlers: (() => void)[] = []
   private disconnectedHandlers: ((reason: string) => void)[] = []
 
@@ -153,12 +152,6 @@ export class BaileysAdapter implements WAAdapter {
         msg.groupName = msg.isGroup ? this.chatNames.get(msg.chatId) : undefined
         normalized.push(msg)
         rawJsons.push(JSON.stringify(raw))
-
-        // Store media metadata for non-text messages
-        if (msg.type !== 'text') {
-          const media = this.normaliseMedia(raw, msg)
-          if (media) this.store.upsertMedia(media)
-        }
       }
 
       // Store in chunks of 200, yielding to event loop between chunks
@@ -184,12 +177,7 @@ export class BaileysAdapter implements WAAdapter {
           this.dispatchEvent?.(eventName, msg, msg.chatId, msg.isGroup)
 
           if (msg.type !== 'text') {
-            const media = this.normaliseMedia(raw, msg)
-            if (media) {
-              this.store.upsertMedia(media)
-              this.mediaHandlers.forEach(h => h(media))
-              this.dispatchEvent?.('media.received', media, msg.chatId, msg.isGroup)
-            }
+            this.dispatchEvent?.('media.received', msg, msg.chatId, msg.isGroup)
           }
         })
       }
@@ -233,7 +221,7 @@ export class BaileysAdapter implements WAAdapter {
   }
 
   onMessage(handler: (msg: Message) => void) { this.messageHandlers.push(handler) }
-  onMedia(handler: (media: Media) => void) { this.mediaHandlers.push(handler) }
+  onMedia(_handler: (media: Message) => void) { /* Media events dispatched via onMessage — type != 'text' */ }
   onConnected(handler: () => void) { this.connectedHandlers.push(handler) }
   onDisconnected(handler: (reason: string) => void) { this.disconnectedHandlers.push(handler) }
 
@@ -327,6 +315,12 @@ export class BaileysAdapter implements WAAdapter {
     const chatId = raw.key.remoteJid ?? ''
     const isGroup = chatId.endsWith('@g.us')
     const groupName = isGroup ? this.chatNames.get(chatId) : undefined
+
+    // Extract mime type for non-text messages
+    const mimeType = type !== 'text'
+      ? (msg[`${type}Message`]?.mimetype ?? undefined)
+      : undefined
+
     return {
       id: raw.key.id ?? '',
       chatId,
@@ -334,23 +328,11 @@ export class BaileysAdapter implements WAAdapter {
       senderName: raw.pushName ?? '',
       content,
       type,
+      mimeType,
       timestamp: new Date((raw.messageTimestamp as number) * 1000),
       isFromMe: raw.key.fromMe ?? false,
       isGroup,
       groupName,
-    }
-  }
-
-  private normaliseMedia(raw: any, msg: Message): Media | null {
-    if (msg.type === 'text') return null
-    return {
-      id: msg.id,
-      chatId: msg.chatId,
-      type: msg.type as Media['type'],
-      mimeType: raw.message?.[`${msg.type}Message`]?.mimetype ?? '',
-      caption: msg.content || undefined,
-      timestamp: msg.timestamp,
-      senderName: msg.senderName,
     }
   }
 

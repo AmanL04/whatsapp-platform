@@ -5,23 +5,13 @@ export interface Message {
   senderName: string
   content: string
   type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker'
+  mimeType?: string
   timestamp: Date
   isFromMe: boolean
   isGroup: boolean
   groupName?: string
   replyTo?: string
   reactions?: { emoji: string; senderId: string }[]
-}
-
-export interface Media {
-  id: string
-  chatId: string
-  type: 'image' | 'video' | 'audio' | 'document'
-  localPath?: string
-  mimeType: string
-  caption?: string
-  timestamp: Date
-  senderName: string
 }
 
 export interface Chat {

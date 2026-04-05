@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as crypto from 'crypto'
-import type { Chat, Message, Media, MessageQuery } from '../../core/types'
+import type { Chat, Message, MessageQuery } from '../../core/types'
 
 export class SQLiteStore {
   private db: Database.Database
@@ -27,6 +27,7 @@ export class SQLiteStore {
         sender_name TEXT,
         content TEXT,
         type TEXT DEFAULT 'text',
+        mime_type TEXT,
         timestamp INTEGER,
         is_from_me INTEGER DEFAULT 0,
         is_group INTEGER DEFAULT 0,
@@ -43,22 +44,13 @@ export class SQLiteStore {
         unread_count INTEGER DEFAULT 0
       );
 
-      CREATE TABLE IF NOT EXISTS media (
-        id TEXT PRIMARY KEY,
-        chat_id TEXT,
-        type TEXT,
-        local_path TEXT,
-        mime_type TEXT,
-        caption TEXT,
-        timestamp INTEGER,
-        sender_name TEXT
-      );
-
       CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, timestamp);
       CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type);
 
       DROP TABLE IF EXISTS tasks;
       DROP TABLE IF EXISTS summaries;
+      DROP TABLE IF EXISTS media;
 
       CREATE TABLE IF NOT EXISTS apps (
         id TEXT PRIMARY KEY,
@@ -113,9 +105,9 @@ export class SQLiteStore {
   upsertMessage(msg: Message, rawJson?: string) {
     this.db.prepare(`
       INSERT OR REPLACE INTO messages
-        (id, chat_id, sender_id, sender_name, content, type, timestamp, is_from_me, is_group, group_name, reply_to, raw_json)
+        (id, chat_id, sender_id, sender_name, content, type, mime_type, timestamp, is_from_me, is_group, group_name, reply_to, raw_json)
       VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       msg.id,
       msg.chatId,
@@ -123,6 +115,7 @@ export class SQLiteStore {
       msg.senderName,
       msg.content,
       msg.type,
+      msg.mimeType ?? null,
       Math.floor(msg.timestamp.getTime() / 1000),
       msg.isFromMe ? 1 : 0,
       msg.isGroup ? 1 : 0,
@@ -205,26 +198,10 @@ export class SQLiteStore {
     ).all().map(this.rowToChat)
   }
 
-  // ─── Media ─────────────────────────────────────────────────────────────────
-
-  upsertMedia(media: Media) {
-    this.db.prepare(`
-      INSERT OR REPLACE INTO media (id, chat_id, type, local_path, mime_type, caption, timestamp, sender_name)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      media.id,
-      media.chatId,
-      media.type,
-      media.localPath ?? null,
-      media.mimeType,
-      media.caption ?? null,
-      Math.floor(media.timestamp.getTime() / 1000),
-      media.senderName,
-    )
-  }
+  // ─── Media (queries messages table where type != 'text') ────────────────────
 
   getMedia(filters: { type?: string; sender?: string; source?: 'chat' | 'story'; limit?: number } = {}) {
-    let sql = 'SELECT * FROM media WHERE 1=1'
+    let sql = "SELECT * FROM messages WHERE type != 'text'"
     const params: (string | number)[] = []
 
     if (filters.type) {
@@ -244,7 +221,7 @@ export class SQLiteStore {
     sql += ' ORDER BY timestamp DESC LIMIT ?'
     params.push(filters.limit ?? 50)
 
-    return this.db.prepare(sql).all(...params)
+    return this.db.prepare(sql).all(...params).map(this.rowToMessage)
   }
 
   // ─── Encryption helpers ─────────────────────────────────────────────────────
@@ -420,6 +397,7 @@ export class SQLiteStore {
       senderName: row.sender_name,
       content: row.content,
       type: row.type,
+      mimeType: row.mime_type ?? undefined,
       timestamp: new Date(row.timestamp * 1000),
       isFromMe: !!row.is_from_me,
       isGroup: !!row.is_group,

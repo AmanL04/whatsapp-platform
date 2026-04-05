@@ -8,7 +8,7 @@ const AUTH = '/dashboard/auth'
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Chat { id: string; name: string; isGroup: boolean; lastMessageAt: string; unreadCount: number }
-interface Message { id: string; chatId: string; senderName: string; content: string; type: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string }
+interface Message { id: string; chatId: string; senderName: string; content: string; type: string; mimeType?: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string }
 interface AppRecord { id: string; name: string; description: string; webhookGlobalUrl: string; webhookSecret: string; webhookEvents: { name: string; url?: string }[]; apiKey: string; permissions: string[]; scopeChatTypes: string[]; scopeSpecificChats: string[]; active: boolean; createdAt: string }
 interface Delivery { id: string; app_id: string; event: string; payload: string; status: string; attempts: number; last_attempt_at: number; response_status: number; created_at: number }
 
@@ -140,8 +140,6 @@ function MessagesTab() {
 
 // ─── Media Tab ───────────────────────────────────────────────────────────────
 
-interface MediaRecord { id: string; chat_id: string; type: string; mime_type: string; caption: string; timestamp: number; sender_name: string }
-
 const MEDIA_TYPES = ['image', 'video', 'audio', 'document']
 
 function MediaTab() {
@@ -155,7 +153,7 @@ function MediaTab() {
   if (senderFilter) params.set('sender', senderFilter)
   params.set('limit', '100')
 
-  const { data: media, loading } = useFetch<MediaRecord[]>(`${API}/media?${params}`)
+  const { data: media, loading } = useFetch<Message[]>(`${API}/media?${params}`)
 
   return (
     <div className="p-6">
@@ -198,12 +196,12 @@ function MediaTab() {
               <div key={m.id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-medium text-gray-500 uppercase">{m.type}</div>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${m.chat_id === 'status@broadcast' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
-                    {m.chat_id === 'status@broadcast' ? 'Story' : 'Chat'}
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${m.chatId === 'status@broadcast' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                    {m.chatId === 'status@broadcast' ? 'Story' : 'Chat'}
                   </span>
                 </div>
-                <div className="text-sm mt-1 truncate">{m.caption || m.mime_type}</div>
-                <div className="text-xs text-gray-400 mt-1">{m.sender_name} &middot; {new Date(m.timestamp * 1000).toLocaleDateString()}</div>
+                <div className="text-sm mt-1 truncate">{m.content || m.mimeType || m.type}</div>
+                <div className="text-xs text-gray-400 mt-1">{m.senderName} &middot; {new Date(m.timestamp).toLocaleDateString()}</div>
               </div>
             ))}
           </div>
