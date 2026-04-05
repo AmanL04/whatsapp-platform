@@ -155,13 +155,15 @@ async function main() {
     })
   }
 
-  // ─── Test webhook endpoint (for self-testing) ────────────────────────────
+  // ─── Test webhook endpoint (local self-testing only) ──────────────────────
 
-  app.post('/test/webhook', (req, res) => {
-    console.log(`[test-webhook] received: ${req.headers['x-webhook-event']} from ${req.headers['x-app-id']}`)
-    console.log(`[test-webhook] signature: ${req.headers['x-webhook-signature']}`)
-    res.status(200).json({ received: true })
-  })
+  if (APP_ENV === 'local') {
+    app.post('/test/webhook', (req, res) => {
+      console.log(`[test-webhook] received: ${req.headers['x-webhook-event']} from ${req.headers['x-app-id']}`)
+      console.log(`[test-webhook] signature: ${req.headers['x-webhook-signature']}`)
+      res.status(200).json({ received: true })
+    })
+  }
 
   // ─── Start ───────────────────────────────────────────────────────────────
 
