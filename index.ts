@@ -15,7 +15,9 @@ import { createApiAuthMiddleware } from './middleware/api-auth'
 import { DashboardAuth } from './middleware/dashboard-auth'
 import { createApiRouter } from './routes/api'
 import { createDashboardApiRouter } from './routes/dashboard-api'
+import { cleanOldDeliveries } from './apps/cleanup'
 import type { EventName } from './core/events'
+import cron from 'node-cron'
 
 // Plugins (TODO: remove in Step 8)
 import dailySummary from './plugins/daily-summary'
@@ -59,6 +61,14 @@ async function main() {
 
   // Re-queue stuck deliveries from a previous crash
   dispatcher.requeueStuckDeliveries()
+
+  // Delivery log cleanup — run on start + daily at 3am
+  const deleted = cleanOldDeliveries(store)
+  if (deleted > 0) console.log(`[cleanup] removed ${deleted} old delivery logs`)
+  cron.schedule('0 3 * * *', () => {
+    const n = cleanOldDeliveries(store)
+    if (n > 0) console.log(`[cleanup] daily: removed ${n} old delivery logs`)
+  })
 
   // 3. Plugins (TODO: remove in Step 8)
   const runtime = new PluginRuntime(adapter)
