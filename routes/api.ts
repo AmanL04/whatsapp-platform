@@ -35,7 +35,7 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
 
     try {
       const chatId = req.query.chatId as string | undefined
-      const limit = Number(req.query.limit ?? 50)
+      const limit = Number(req.query.limit ?? 20)
       const sinceStr = req.query.since as string | undefined
       const since = sinceStr ? new Date(sinceStr) : undefined
 
@@ -67,7 +67,7 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
       const type = _req.query.type as string | undefined
       const sender = _req.query.sender as string | undefined
       const source = _req.query.source as 'chat' | 'story' | undefined
-      const limit = Number(_req.query.limit ?? 50)
+      const limit = Number(_req.query.limit ?? 20)
       const media = store.getMedia({ type, sender, source, limit })
       const filtered = media.filter(m => filterMessageForApp(m, app) !== null)
       res.json(filtered)

@@ -162,7 +162,7 @@ export class SQLiteStore {
     }
 
     sql += ' ORDER BY timestamp DESC LIMIT ?'
-    params.push(Math.min(query.limit ?? 50, 500))
+    params.push(Math.min(query.limit ?? 20, 100))
 
     return this.db.prepare(sql).all(...params).map(this.rowToMessage)
   }
@@ -191,7 +191,7 @@ export class SQLiteStore {
   getChats(limit = 200): Chat[] {
     return this.db.prepare(
       'SELECT * FROM chats ORDER BY last_message_at DESC LIMIT ?'
-    ).all(Math.min(limit, 500)).map(this.rowToChat)
+    ).all(Math.min(limit, 100)).map(this.rowToChat)
   }
 
   // ─── Media (queries messages table where type != 'text') ────────────────────
@@ -215,7 +215,7 @@ export class SQLiteStore {
     }
 
     sql += ' ORDER BY timestamp DESC LIMIT ?'
-    params.push(Math.min(filters.limit ?? 50, 500))
+    params.push(Math.min(filters.limit ?? 20, 100))
 
     return this.db.prepare(sql).all(...params).map(this.rowToMessage)
   }
@@ -366,7 +366,7 @@ export class SQLiteStore {
     if (filters.status) { sql += ' AND status = ?'; params.push(filters.status) }
 
     sql += ' ORDER BY created_at DESC LIMIT ?'
-    params.push(Math.min(filters.limit ?? 100, 500))
+    params.push(Math.min(filters.limit ?? 20, 100))
 
     return this.db.prepare(sql).all(...params)
   }

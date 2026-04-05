@@ -109,7 +109,7 @@ export function createDashboardApiRouter(
   // Delivery logs
   router.get('/api/deliveries', (req, res) => {
     try {
-      const limit = Number(req.query.limit ?? 100)
+      const limit = Number(req.query.limit ?? 20)
       const appId = req.query.appId as string | undefined
       const status = req.query.status as string | undefined
       const deliveries = store.getDeliveries({ appId, status, limit })
@@ -121,7 +121,7 @@ export function createDashboardApiRouter(
 
   router.get('/api/apps/:id/deliveries', (req, res) => {
     try {
-      const limit = Number(req.query.limit ?? 100)
+      const limit = Number(req.query.limit ?? 20)
       const deliveries = store.getDeliveries({ appId: req.params.id, limit })
       res.json(deliveries)
     } catch (err) {
@@ -142,7 +142,7 @@ export function createDashboardApiRouter(
   router.get('/api/messages', async (req, res) => {
     try {
       const chatId = req.query.chatId as string | undefined
-      const limit = Number(req.query.limit ?? 50)
+      const limit = Number(req.query.limit ?? 20)
       const messages = await adapter.getMessages({ chatId, limit })
       res.json(messages)
     } catch (err) {
@@ -155,7 +155,7 @@ export function createDashboardApiRouter(
       const type = req.query.type as string | undefined
       const sender = req.query.sender as string | undefined
       const source = req.query.source as 'chat' | 'story' | undefined
-      const limit = Number(req.query.limit ?? 50)
+      const limit = Number(req.query.limit ?? 20)
       const media = store.getMedia({ type, sender, source, limit })
       res.json(media)
     } catch (err) {
