@@ -16,6 +16,7 @@ export class BaileysAdapter implements WAAdapter {
   private authDir: string
   private store: SQLiteStore
   private chatNames: Map<string, string> = new Map()
+  private dispatchEvent?: (event: string, payload: unknown, chatId: string, isGroup: boolean) => void
   private messageHandlers: ((msg: Message) => void)[] = []
   private mediaHandlers: ((media: Media) => void)[] = []
   private connectedHandlers: (() => void)[] = []
@@ -28,6 +29,15 @@ export class BaileysAdapter implements WAAdapter {
 
   getStore(): SQLiteStore {
     return this.store
+  }
+
+  setEventDispatcher(fn: (event: string, payload: unknown, chatId: string, isGroup: boolean) => void) {
+    this.dispatchEvent = fn
+  }
+
+  /** Returns the connected WhatsApp JID (e.g. for OTP sending) */
+  getOwnJid(): string | null {
+    return this.sock?.user?.id ?? null
   }
 
   async connect(): Promise<void> {
@@ -68,6 +78,7 @@ export class BaileysAdapter implements WAAdapter {
         if (chat.id && chat.name) {
           this.chatNames.set(chat.id, chat.name)
           this.store.upsertChat(chat.id, chat.name, chat.id.endsWith('@g.us'))
+          this.dispatchEvent?.('chat.updated', { id: chat.id, name: chat.name }, chat.id, chat.id.endsWith('@g.us'))
         }
       }
     })
@@ -77,6 +88,7 @@ export class BaileysAdapter implements WAAdapter {
         if (update.id && update.name) {
           this.chatNames.set(update.id, update.name)
           this.store.upsertChat(update.id, update.name, update.id.endsWith('@g.us'))
+          this.dispatchEvent?.('chat.updated', { id: update.id, name: update.name }, update.id, update.id.endsWith('@g.us'))
         }
       }
     })
@@ -148,11 +160,16 @@ export class BaileysAdapter implements WAAdapter {
           this.store.upsertMessage(msg, JSON.stringify(raw))
           this.messageHandlers.forEach(h => h(msg))
 
+          // Dispatch to external apps
+          const eventName = msg.isFromMe ? 'message.sent' : 'message.received'
+          this.dispatchEvent?.(eventName, msg, msg.chatId, msg.isGroup)
+
           if (msg.type !== 'text') {
             const media = this.normaliseMedia(raw, msg)
             if (media) {
               this.store.upsertMedia(media)
               this.mediaHandlers.forEach(h => h(media))
+              this.dispatchEvent?.('media.received', media, msg.chatId, msg.isGroup)
             }
           }
         })

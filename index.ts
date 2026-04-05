@@ -4,8 +4,11 @@ import cors from 'cors'
 
 import { BaileysAdapter } from './adapters/baileys'
 import { PluginRuntime } from './core/runtime'
+import { AppRegistry } from './apps/registry'
+import { WebhookDispatcher } from './apps/dispatcher'
+import type { EventName } from './core/events'
 
-// Plugins
+// Plugins (TODO: remove in Step 8)
 import dailySummary from './plugins/daily-summary'
 import contentRecap from './plugins/content-recap'
 import taskExtractor from './plugins/task-extractor'
@@ -17,7 +20,18 @@ async function main() {
   const adapter = new BaileysAdapter('./data/auth', './data/whatsapp.db', process.env.DB_ENCRYPTION_SECRET)
   const store = adapter.getStore()
 
-  // 2. Register plugins
+  // 2. App registry + webhook dispatcher
+  const registry = new AppRegistry(store)
+  const dispatcher = new WebhookDispatcher(registry, store)
+
+  adapter.setEventDispatcher((event, payload, chatId, isGroup) => {
+    dispatcher.dispatch(event as EventName, payload, chatId, isGroup)
+  })
+
+  // Re-queue stuck deliveries from a previous crash
+  dispatcher.requeueStuckDeliveries()
+
+  // 3. Register plugins (TODO: remove in Step 8)
   const runtime = new PluginRuntime(adapter)
   runtime.register(dailySummary)
   runtime.register(contentRecap)
