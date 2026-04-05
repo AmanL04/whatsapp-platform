@@ -321,11 +321,14 @@ export class BaileysAdapter implements WAAdapter {
       ? (msg[`${type}Message`]?.mimetype ?? undefined)
       : undefined
 
+    const senderId = raw.key.participant ?? raw.participant ?? chatId
+    const senderName = raw.pushName || this.chatNames.get(senderId) || ''
+
     return {
       id: raw.key.id ?? '',
       chatId,
-      senderId: raw.key.participant ?? chatId,
-      senderName: raw.pushName ?? '',
+      senderId,
+      senderName,
       content,
       type,
       mimeType,
