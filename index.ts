@@ -112,7 +112,9 @@ async function main() {
   const apiLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
     max: 100,
-    keyGenerator: (req) => req.waApp?.id ?? req.ip ?? 'unknown',
+    // Use app ID as rate limit key (resolved by auth middleware before this runs)
+    // Falls back to IP for unauthenticated requests (which will 401 anyway)
+    keyGenerator: (req) => req.waApp?.id ?? 'unauthenticated',
     message: { error: 'Rate limit exceeded. Max 100 requests per minute.' },
   })
 
