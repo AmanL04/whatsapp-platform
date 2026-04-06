@@ -22,6 +22,17 @@ function useTheme() {
   return { dark, toggle: () => setDark(d => !d) }
 }
 
+// ─── Centralized fetch with 401 → logout ────────────────────────────────────
+
+let onSessionExpired: (() => void) | null = null
+
+/** Wrapper around fetch that redirects to login on 401 */
+async function apiFetch(url: string, opts?: RequestInit): Promise<Response> {
+  const res = await fetch(url, { credentials: 'include', ...opts })
+  if (res.status === 401) { onSessionExpired?.(); throw new Error('session expired') }
+  return res
+}
+
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
 function useFetch<T>(url: string) {
@@ -31,7 +42,7 @@ function useFetch<T>(url: string) {
   useEffect(() => {
     let cancelled = false
     const c = new AbortController()
-    fetch(url, { credentials: 'include', signal: c.signal })
+    apiFetch(url, { signal: c.signal })
       .then(r => r.ok ? r.json() : null)
       .then((d: T | null) => { if (!cancelled) { setData(d); setLoading(false) } })
       .catch(() => { if (!cancelled) { setData(null); setLoading(false) } })
@@ -296,7 +307,7 @@ function AppEditForm({ app, onSave, onCancel }: { app: AppRecord; onSave: () => 
   const [sc, setSc] = useState<string[]>(app.scopeChatTypes)
   const [saving, setSaving] = useState(false)
   const t = (a: string[], v: string, s: (x: string[]) => void) => s(a.includes(v) ? a.filter(i => i !== v) : [...a, v])
-  const save = async () => { setSaving(true); await fetch(`${API}/apps/${app.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ webhookGlobalUrl: wu, webhookEvents: ev.map(e => ({ name: e })), permissions: pm, scopeChatTypes: sc }) }); setSaving(false); onSave() }
+  const save = async () => { setSaving(true); await apiFetch(`${API}/apps/${app.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ webhookGlobalUrl: wu, webhookEvents: ev.map(e => ({ name: e })), permissions: pm, scopeChatTypes: sc }) }).catch(() => {}); setSaving(false); onSave() }
 
   return (
     <div className="mt-5 pt-5 border-t-2 border-[var(--border)] space-y-4 animate-in">
@@ -322,11 +333,11 @@ function AppsTab() {
   const t = (a: string[], v: string, s: (x: string[]) => void) => s(a.includes(v) ? a.filter(i => i !== v) : [...a, v])
 
   const createApp = async () => {
-    try { const r = await fetch(`${API}/apps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ name, description: desc, webhookGlobalUrl: wu || undefined, webhookEvents: ev.length ? ev.map(e => ({ name: e })) : undefined, permissions: pm, scopeChatTypes: sc, scopeSpecificChats: [] }) })
+    try { const r = await apiFetch(`${API}/apps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, webhookGlobalUrl: wu || undefined, webhookEvents: ev.length ? ev.map(e => ({ name: e })) : undefined, permissions: pm, scopeChatTypes: sc, scopeSpecificChats: [] }) })
       if (r.ok) { const a = await r.json(); setCreated(a); setShowForm(false); setName(''); setDesc(''); setWu(''); setEv([]); setPm([]); refetch() }
-    } catch (e) { console.error(e) }
+    } catch { /* 401 handled by apiFetch */ }
   }
-  const deactivate = async (id: string) => { await fetch(`${API}/apps/${id}`, { method: 'DELETE', credentials: 'include' }); refetch() }
+  const deactivate = async (id: string) => { await apiFetch(`${API}/apps/${id}`, { method: 'DELETE' }).catch(() => {}); refetch() }
 
   if (loading) return <div className="p-8 text-[var(--text-tertiary)] font-medium">Loading...</div>
 
@@ -446,6 +457,9 @@ export default function App() {
   const { dark, toggle } = useTheme()
   const [auth, setAuth] = useState<boolean | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
+
+  // Wire global 401 handler
+  useEffect(() => { onSessionExpired = () => setAuth(false); return () => { onSessionExpired = null } }, [])
 
   useEffect(() => { fetch(`${API}/auth/check`, { credentials: 'include' }).then(r => r.json()).then(d => setAuth(d.authenticated)).catch(() => setAuth(false)) }, [])
 
