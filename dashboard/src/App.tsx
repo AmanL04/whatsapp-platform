@@ -105,7 +105,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
       <div className="w-full max-w-md animate-in">
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-24 h-24 rounded-[var(--radius-xl)] brutal bg-[var(--accent)] mb-6">
-            <span className="text-5xl font-black text-white">W</span>
+            <span className="text-5xl font-black text-[var(--text-inverse)]">W</span>
           </div>
           <h1 className="text-7xl font-black tracking-tighter text-[var(--text-primary)]">Companion</h1>
           <p className="text-xl text-[var(--text-secondary)] mt-2 font-medium">Your WhatsApp infrastructure</p>
@@ -448,7 +448,7 @@ export default function App() {
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-[var(--radius-md)] brutal bg-[var(--accent)] flex items-center justify-center">
-              <span className="text-base font-black text-white">W</span>
+              <span className="text-base font-black text-[var(--text-inverse)]">W</span>
             </div>
             <span className="text-2xl font-black text-[var(--text-primary)] tracking-tight">Companion</span>
             <span className="w-3 h-3 rounded-full bg-[var(--success)] border-2 border-[var(--border)]" style={{ animation: 'glow-pulse 2s ease-in-out infinite' }} />
