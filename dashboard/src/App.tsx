@@ -66,7 +66,7 @@ function Input({ className = '', ...props }: React.InputHTMLAttributes<HTMLInput
 
 function RefreshBtn({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="w-10 h-10 rounded-full border-2 border-[var(--border)] bg-[var(--bg-surface)] flex items-center justify-center text-[var(--text-secondary)] shadow-[var(--shadow-brutal-sm)] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[var(--shadow-brutal)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all duration-200" title="Refresh">
+    <button onClick={onClick} className="w-10 h-10 rounded-full brutal bg-[var(--bg-surface)] flex items-center justify-center text-[var(--text-secondary)]" title="Refresh">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 1v5h5" /><path d="M15 15v-5h-5" /><path d="M13.5 6A6 6 0 0 0 3 3.5L1 6" /><path d="M2.5 10A6 6 0 0 0 13 12.5l2-2.5" /></svg>
     </button>
   )
@@ -100,7 +100,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6" style={{ background: 'var(--card-amber)' }}>
-      <button onClick={toggle} className="fixed top-6 right-6 w-10 h-10 rounded-full brutal-sm bg-[var(--bg-surface)] flex items-center justify-center text-lg z-20">{dark ? '\u2600\ufe0f' : '\ud83c\udf19'}</button>
+      <button onClick={toggle} className="fixed top-6 right-6 w-10 h-10 rounded-full brutal bg-[var(--bg-surface)] flex items-center justify-center text-lg z-20">{dark ? '\u2600\ufe0f' : '\ud83c\udf19'}</button>
 
       <div className="w-full max-w-md animate-in">
         <div className="text-center mb-10">
@@ -457,14 +457,14 @@ export default function App() {
           <div className="flex gap-2">
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
-                className={`px-4 py-2 rounded-[var(--radius-full)] text-sm font-bold transition-all duration-200 border-2 border-[var(--border)] ${tab === t.id ? 'bg-[var(--accent)] text-[var(--text-inverse)] shadow-[var(--shadow-brutal)] translate-x-0 translate-y-0' : 'bg-transparent text-[var(--text-secondary)] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[var(--shadow-brutal)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none'}`}>
+                className={`px-4 py-2 rounded-[var(--radius-full)] text-sm font-bold transition-all duration-200 ${tab === t.id ? 'brutal bg-[var(--accent)] text-[var(--text-inverse)]' : 'brutal-sm bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
                 {t.label}
               </button>
             ))}
           </div>
         </div>
 
-        <button onClick={toggle} className="w-10 h-10 rounded-full border-2 border-[var(--border)] bg-[var(--bg-surface)] flex items-center justify-center text-lg hover:shadow-[var(--shadow-brutal-sm)] transition-all">
+        <button onClick={toggle} className="w-10 h-10 rounded-full brutal bg-[var(--bg-surface)] flex items-center justify-center text-lg">
           {dark ? '\u2600\ufe0f' : '\ud83c\udf19'}
         </button>
       </nav>
