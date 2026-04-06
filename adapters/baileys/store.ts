@@ -73,11 +73,10 @@ export class SQLiteStore {
       : (msg.isFromMe ? '' : msg.senderName)
     this.db.prepare(`
       INSERT INTO chats (id, name, is_group, last_message_at, unread_count)
-      VALUES (?, ?, ?, ?, 1)
+      VALUES (?, ?, ?, ?, 0)
       ON CONFLICT(id) DO UPDATE SET
         name = CASE WHEN excluded.name != '' THEN excluded.name ELSE chats.name END,
-        last_message_at = MAX(chats.last_message_at, excluded.last_message_at),
-        unread_count = chats.unread_count + 1
+        last_message_at = MAX(chats.last_message_at, excluded.last_message_at)
     `).run(
       msg.chatId,
       chatName,
@@ -287,6 +286,10 @@ export class SQLiteStore {
       VALUES (?, ?, ?, 0, 0)
       ON CONFLICT(id) DO UPDATE SET name = excluded.name, is_group = excluded.is_group
     `).run(id, name, isGroup ? 1 : 0)
+  }
+
+  updateUnreadCount(id: string, count: number) {
+    this.db.prepare('UPDATE chats SET unread_count = ? WHERE id = ?').run(count, id)
   }
 
   getChats(opts: { after?: number; before?: number; limit?: number } = {}): Chat[] {

@@ -97,23 +97,33 @@ export class BaileysAdapter implements WAAdapter {
       }
     })
 
-    // Track chat/group names from Baileys sync
+    // Track chat/group names + unread counts from Baileys sync
     this.sock.ev.on('chats.upsert', (chats) => {
       for (const chat of chats) {
-        if (chat.id && chat.name) {
-          this.chatNames.set(chat.id, chat.name)
-          this.store.upsertChat(chat.id, chat.name, chat.id.endsWith('@g.us'))
-          this.dispatchEvent?.('chat.updated', { id: chat.id, name: chat.name }, chat.id, chat.id.endsWith('@g.us'))
+        const chatId = resolveCanonicalJid(normalizeJid(chat.id))
+        if (!chatId) continue
+        if (chat.name) {
+          this.chatNames.set(chatId, chat.name)
+          this.store.upsertChat(chatId, chat.name, chatId.endsWith('@g.us'))
+          this.dispatchEvent?.('chat.updated', { id: chatId, name: chat.name }, chatId, chatId.endsWith('@g.us'))
+        }
+        if (typeof chat.unreadCount === 'number') {
+          this.store.updateUnreadCount(chatId, chat.unreadCount)
         }
       }
     })
 
     this.sock.ev.on('chats.update', (updates) => {
       for (const update of updates) {
-        if (update.id && update.name) {
-          this.chatNames.set(update.id, update.name)
-          this.store.upsertChat(update.id, update.name, update.id.endsWith('@g.us'))
-          this.dispatchEvent?.('chat.updated', { id: update.id, name: update.name }, update.id, update.id.endsWith('@g.us'))
+        const chatId = resolveCanonicalJid(normalizeJid(update.id))
+        if (!chatId) continue
+        if (update.name) {
+          this.chatNames.set(chatId, update.name)
+          this.store.upsertChat(chatId, update.name, chatId.endsWith('@g.us'))
+          this.dispatchEvent?.('chat.updated', { id: chatId, name: update.name }, chatId, chatId.endsWith('@g.us'))
+        }
+        if (typeof update.unreadCount === 'number') {
+          this.store.updateUnreadCount(chatId, update.unreadCount)
         }
       }
     })
@@ -190,12 +200,17 @@ export class BaileysAdapter implements WAAdapter {
     this.sock.ev.on('messaging-history.set', ({ messages: historyMsgs, chats: historyChats }) => {
       console.log(`[baileys] history sync: ${historyMsgs.length} messages, ${historyChats.length} chats`)
 
-      // Store chat names in a transaction
+      // Store chat names + unread counts in a transaction
       this.store.runInTransaction(() => {
         for (const chat of historyChats) {
-          if (chat.id && chat.name) {
-            this.chatNames.set(chat.id, chat.name)
-            this.store.upsertChat(chat.id, chat.name, chat.id.endsWith('@g.us'))
+          const chatId = resolveCanonicalJid(normalizeJid(chat.id))
+          if (!chatId) continue
+          if (chat.name) {
+            this.chatNames.set(chatId, chat.name)
+            this.store.upsertChat(chatId, chat.name, chatId.endsWith('@g.us'))
+          }
+          if (typeof chat.unreadCount === 'number' && chat.unreadCount >= 0) {
+            this.store.updateUnreadCount(chatId, chat.unreadCount)
           }
         }
       })
