@@ -35,10 +35,6 @@ export function updateIdentityCache(aliasJid: string, canonicalJid: string) {
   identityCache.set(aliasJid, canonicalJid)
 }
 
-export function identityCacheSize(): number {
-  return identityCache.size
-}
-
 /**
  * Resolve any JID to its canonical form. O(1) via in-memory cache.
  * Device JID → stripped phone JID

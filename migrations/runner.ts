@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3'
+import Database from 'better-sqlite3'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -6,12 +6,29 @@ export type MigrationFn = (db: Database.Database) => void
 
 /**
  * Runs all pending migrations from the migrations/ directory.
+ * Opens its own DB connection, runs migrations, then closes it.
+ * Call this BEFORE creating the store/adapter so schema is ready.
+ *
  * Each migration file exports an `up(db)` function.
- * Filenames are sorted alphabetically — use date prefixes for ordering.
+ * Filenames are sorted alphabetically — use numeric prefixes for ordering.
  * Each migration runs in a transaction. Successfully run migrations are
  * recorded in the `migrations` table and never run again.
  */
-export function runMigrations(db: Database.Database) {
+export function runMigrations(dbPath: string) {
+  const dir = path.dirname(dbPath)
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+  const db = new Database(dbPath)
+  db.pragma('journal_mode = WAL')
+
+  try {
+    _runMigrations(db)
+  } finally {
+    db.close()
+  }
+}
+
+function _runMigrations(db: Database.Database) {
   // Ensure migrations tracking table exists
   db.exec('CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, ran_at INTEGER)')
 
@@ -20,10 +37,11 @@ export function runMigrations(db: Database.Database) {
     (db.prepare('SELECT name FROM migrations').all() as { name: string }[]).map(r => r.name)
   )
 
-  // Find migration files (exclude runner.ts itself)
+  // Find migration files (exclude runner infrastructure)
   const migrationsDir = path.join(__dirname)
+  const exclude = new Set(['runner.ts', 'run.ts'])
   const files = fs.readdirSync(migrationsDir)
-    .filter(f => f.endsWith('.ts') && f !== 'runner.ts')
+    .filter(f => f.endsWith('.ts') && !exclude.has(f))
     .sort()
 
   console.log(`[migrations] found ${files.length} migration files, ${ran.size} already ran`)

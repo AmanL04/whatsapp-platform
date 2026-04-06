@@ -11,14 +11,15 @@ After implementing changes, Claude Code can self-test the full stack end-to-end 
 ### Prerequisites
 
 - `data/auth/` has saved WhatsApp session credentials (from a prior QR scan)
-- `data/whatsapp.db` exists (created on first server start)
+- `data/whatsapp.db` exists (created by migrations on first `npm run start`)
 - `.env` has required secrets (`JWT_SECRET`, `DB_ENCRYPTION_SECRET`)
 
 ### Test Loop
 
 1. **Typecheck** — `npm run typecheck` after every step. Must pass with zero errors.
 
-2. **Server boots** — `npm run start`. Verify logs show:
+2. **Server boots** — `npm run start` (runs migrations first, then starts server). Verify logs show:
+   - `[migrations] found N migration files, ...`
    - `[baileys] connected` (auto-reconnects using saved session, no QR needed)
    - `[api] listening on http://localhost:3100`
    - No crash or unhandled errors

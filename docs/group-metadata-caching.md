@@ -1,55 +1,55 @@
-# Group Metadata Caching Plan
+# Group Metadata Caching
 
 ## Problem
 
-We call `sock.groupMetadata()` in multiple places without caching:
+Group metadata (subject, participants) is fetched from WhatsApp's API in multiple places without persistent caching:
 
-1. **`syncGroupMemberNames()`** — called on every server connect, fetches metadata for all 29+ groups sequentially (with 200ms delay between each)
-2. **`resolveGroupName()`** — called per-message for group messages with unknown names, hits WhatsApp API each time
-3. **Baileys internal** — when sending messages to groups, Baileys fetches group participant lists for encryption
+1. **`syncGroupMemberNames()`** — fetches metadata for all groups to extract LID→phone mappings. Currently only runs on fresh DB (skipped when identities cached), but when it does run, it makes N sequential API calls with 200ms spacing.
+2. **`resolveGroupName()`** — called per-message for groups with unknown names. Hits WhatsApp API on every cache miss. The in-memory `chatNames` cache helps within a session, but is lost on restart.
+3. **Baileys internal** — when sending messages to groups, Baileys fetches participant lists for Signal encryption. Without `cachedGroupMetadata`, every group send triggers an API call.
 
-Without caching, this causes:
-- **Rate limiting risk** — WhatsApp may throttle or ban for excessive group metadata requests
-- **Slow startup** — 29 groups × 200ms = ~6 seconds just for group sync
-- **Redundant calls** — the same group metadata is fetched multiple times per session
+### Current state
 
-## Baileys' `cachedGroupMetadata` Config
+- `chatNames: Map<string, string>` — in-memory only, lost on restart.
+- `identities` table — persists LID→phone mappings. Used to skip full group sync on restart.
+- `chats` table — persists group name via `upsertChat()`. No participant data.
+- `groupSyncDone` flag + 30s fallback timer + history-sync trigger — hacky timing logic to defer group sync.
 
-From [Baileys docs](https://baileys.wiki/docs/socket/configuration#cachedgroupmetadata):
+### What's missing
 
-```typescript
-const sock = makeWASocket({
-  cachedGroupMetadata: async (jid) => groupCache.get(jid)
-})
-```
+- No persistent participant data — on restart, Baileys has no cached participants for encryption.
+- No staleness tracking — can't tell if metadata is fresh or stale.
+- `resolveGroupName()` hits WhatsApp API on restart for any group not yet seen in the session.
+- `syncGroupMemberNames()` fetches everything fresh, ignoring what we already know.
 
-When provided, Baileys uses this cache instead of calling WhatsApp for group participant lists during message encryption. Without it, every group message send triggers an API call that can cause rate limits and bans.
+## Approach: Two columns on `chats`, no new table
 
-## Proposed Implementation
+Group metadata is 1:1 with chats. A separate table adds JOINs and sync headaches. Instead, add two columns to `chats`:
 
-### 1. In-memory cache with SQLite persistence
-
-```typescript
-// In BaileysAdapter
-private groupMetadataCache: Map<string, GroupMetadata> = new Map()
-```
-
-**Populated from:**
-- `syncGroupMemberNames()` on connect (already fetches all group metadata)
-- `groups.upsert` event (new groups)
-- `resolveGroupName()` cache misses (fetch once, cache forever)
-
-**Persisted to SQLite** — new `group_metadata` table:
 ```sql
-CREATE TABLE IF NOT EXISTS group_metadata (
-  group_jid TEXT PRIMARY KEY,
-  subject TEXT,
-  participants TEXT,  -- JSON array of { id, jid, lid, admin }
-  updated_at INTEGER
-);
+ALTER TABLE chats ADD COLUMN participants TEXT;             -- JSON: [{ id, jid, lid, admin }], NULL for DMs
+ALTER TABLE chats ADD COLUMN group_metadata_updated_at INTEGER;  -- when we last fetched from WhatsApp
 ```
 
-### 2. Wire into Baileys socket config
+On fresh DB these are created in `init()`. `getChats()` does not SELECT these columns — zero overhead on the dashboard sidebar. Read only when needed.
+
+### In-memory cache
+
+Replace `chatNames: Map<string, string>` group usage with a richer structure:
+
+```typescript
+private groupCache: Map<string, { subject: string; participants: any[] }> = new Map()
+```
+
+`chatNames` stays for DM contact names. Group subjects move to `groupCache`.
+
+### Startup flow (replaces current timing logic)
+
+1. **Load from SQLite** — query chats where `is_group = 1 AND participants IS NOT NULL`, populate `groupCache`. Extract LID→phone mappings from stored participants, populate identity cache. Zero API calls.
+2. **Background refresh** — after connect, refresh groups where `group_metadata_updated_at` is NULL or older than 24 hours. Batched with 200ms delays. Updates cache + SQLite + identities.
+3. **Remove `groupSyncDone` flag, 30s fallback timer, and history-sync trigger** — the SQLite cache makes all of this unnecessary. Fresh DB: all groups stale → all fetched in background. Subsequent runs: instant load, only stale entries refreshed.
+
+### Wire `cachedGroupMetadata` into Baileys
 
 ```typescript
 this.sock = makeWASocket({
@@ -57,42 +57,81 @@ this.sock = makeWASocket({
   auth: state,
   syncFullHistory: true,
   cachedGroupMetadata: async (jid) => {
-    return this.groupMetadataCache.get(jid) ?? null
+    const cached = this.groupCache.get(jid)
+    if (!cached) return undefined
+    return { id: jid, subject: cached.subject, participants: cached.participants } as GroupMetadata
   },
 })
 ```
 
-### 3. Update `syncGroupMemberNames()`
+Prevents Baileys from calling WhatsApp's API for participant lists on every group message send.
 
-Currently fetches metadata and discards it after extracting LID→JID mappings. Change to:
-- Store full metadata in cache + SQLite
-- On startup, load from SQLite first (instant), then refresh from WhatsApp in background
-- This makes startup fast AND the cache fresh
+### Update event handlers
 
-### 4. Update `resolveGroupName()`
+- **`groups.upsert`** — store subject + participants in `groupCache` + SQLite (currently only stores subject in `chatNames`)
+- **`groups.update`** — update subject in cache + SQLite
+- **`group-participants.update`** — update participant list in cache + SQLite (not currently handled)
 
-Currently calls `sock.groupMetadata()` on cache miss. Change to:
-- Check in-memory cache first
-- Check SQLite second
-- Only call WhatsApp API as last resort
-- Store result in both cache and SQLite
+### Simplify `resolveGroupName()`
 
-## Benefits
+```typescript
+private async resolveGroupName(msg: Message): Promise<void> {
+  if (!msg.isGroup || msg.groupName) return
+  // 1. In-memory cache
+  const cached = this.groupCache.get(msg.chatId)
+  if (cached) { msg.groupName = cached.subject; return }
+  // 2. SQLite (chats table)
+  const stored = this.store.getGroupParticipants(msg.chatId)
+  if (stored) { this.groupCache.set(msg.chatId, stored); msg.groupName = stored.subject; return }
+  // 3. API (last resort) — fetch, store in cache + SQLite
+  if (!this.sock) return
+  try {
+    const metadata = await this.sock.groupMetadata(msg.chatId)
+    this.store.updateGroupMetadata(msg.chatId, metadata.subject, metadata.participants)
+    this.groupCache.set(msg.chatId, { subject: metadata.subject, participants: metadata.participants })
+    msg.groupName = metadata.subject
+  } catch { /* silent */ }
+}
+```
 
-| Before | After |
-|---|---|
-| 29 API calls on every connect | 0 API calls (loaded from SQLite), background refresh |
-| Per-message API call for unknown groups | In-memory lookup |
-| No Baileys encryption cache | Baileys uses our cache for sends |
-| Rate limit risk on heavy group usage | Minimal API calls |
+### Rename `syncGroupMemberNames()` → `refreshStaleGroups()`
 
-## Files Changed
+Instead of fetching ALL groups on first connect:
+
+1. Query chats where `is_group = 1` and (`group_metadata_updated_at` is NULL or older than 24h)
+2. Fetch metadata for stale groups only (with 200ms delay between calls)
+3. Update cache + SQLite + identities
+4. Safe to run on every connect — only makes API calls for stale entries
+
+## Store changes
+
+### New methods on `SQLiteStore`
+
+- `updateGroupMetadata(groupJid, subject, participants)` — updates `participants` and `group_metadata_updated_at` columns on the chats row
+- `getGroupParticipants(groupJid)` — returns `{ subject, participants }` for a single group
+- `loadAllGroupMetadata()` — returns all groups with non-null participants for startup cache population
+- `getStaleGroups(maxAgeSeconds)` — returns group JIDs where `group_metadata_updated_at` is NULL or older than threshold
+
+### Modified methods
+
+- `upsertChat()` — no change needed (participants/metadata_updated_at are separate updates, not on every message)
+- `getChats()` — no change (doesn't SELECT new columns)
+
+## Files changed
 
 | File | Changes |
 |---|---|
-| `adapters/baileys/index.ts` | Add cache, wire `cachedGroupMetadata`, update `syncGroupMemberNames` and `resolveGroupName` |
-| `adapters/baileys/store.ts` | Add `group_metadata` table, `upsertGroupMetadata`, `getGroupMetadata`, `getAllGroupMetadata` |
+| `migrations/0001_initial-schema.ts` | Schema includes `participants` and `group_metadata_updated_at` columns on chats |
+| `migrations/0002_group-metadata-cache.ts` | Delta migration for existing DBs: adds columns, new indexes, drops redundant index |
+| `adapters/baileys/store.ts` | `updateGroupMetadata`, `getGroupParticipants`, `loadAllGroupMetadata`, `getStaleGroups` (no schema in store — lives in migrations) |
+| `adapters/baileys/index.ts` | Add `groupCache`, wire `cachedGroupMetadata`, simplify startup (remove `groupSyncDone`/timer), handle `group-participants.update`, rename `syncGroupMemberNames` → `refreshStaleGroups`, simplify `resolveGroupName` |
 
-## Risk
+## Verification
 
-Low — this is purely additive. The cache is a performance optimization. If the cache returns stale data, Baileys falls back to API calls. Group metadata changes rarely (member joins/leaves, subject changes) and we update on `groups.upsert` events.
+1. `npm run typecheck` passes
+2. Fresh DB start: all groups fetched in background, participants + metadata_updated_at persisted
+3. Restart: zero WhatsApp API calls for group metadata, instant cache load
+4. Send message to group: no `groupMetadata` API call in server logs (Baileys uses cache)
+5. `resolveGroupName()`: no API calls for known groups
+6. New group joined: `groups.upsert` populates cache + SQLite immediately
+7. After 24h: stale groups refreshed in background on next connect

@@ -7,8 +7,9 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "tsx watch index.ts",
-    "start": "tsx index.ts",
+    "dev": "npm run migrate && tsx watch index.ts",
+    "migrate": "tsx migrations/run.ts",
+    "start": "npm run migrate && tsx index.ts",
     "build": "cd dashboard && npm install && npx vite build",
     "typecheck": "tsc --noEmit",
     "reconnect": "tsx cli/reconnect.ts"
