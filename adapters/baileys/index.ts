@@ -61,6 +61,8 @@ export class BaileysAdapter implements WAAdapter {
       if (connection === 'open') {
         console.log('[baileys] connected')
         this.connectedHandlers.forEach(h => h())
+        // Sync group member names in background
+        this.syncGroupMemberNames()
       }
       if (connection === 'close') {
         const code = (lastDisconnect?.error as Boom)?.output?.statusCode
@@ -170,6 +172,13 @@ export class BaileysAdapter implements WAAdapter {
         // Resolve group name if missing, then persist + dispatch
         this.resolveGroupName(msg).then(() => {
           this.store.upsertMessage(msg, JSON.stringify(raw))
+
+          // Update sender name in chats table from pushName (replaces phone number fallback over time)
+          if (msg.senderName && msg.senderId && msg.senderId !== msg.chatId) {
+            this.chatNames.set(msg.senderId, msg.senderName)
+            this.store.upsertChat(msg.senderId, msg.senderName, false)
+          }
+
           this.messageHandlers.forEach(h => h(msg))
 
           // Dispatch to external apps
@@ -240,6 +249,74 @@ export class BaileysAdapter implements WAAdapter {
       if (i + CHUNK < messages.length) {
         await new Promise(resolve => setTimeout(resolve, 10))
       }
+    }
+  }
+
+  // ─── Group member name sync ─────────────────────────────────────────────────
+
+  private async syncGroupMemberNames() {
+    if (!this.sock) return
+    try {
+      const chats = this.store.getChats({ limit: 500 })
+      const groups = chats.filter(c => c.isGroup && c.id.endsWith('@g.us'))
+
+      console.log(`[baileys] syncing member names for ${groups.length} groups`)
+
+      // Step 1: Build LID → JID mapping from group metadata
+      const lidToJid: Map<string, string> = new Map()
+      for (const group of groups) {
+        try {
+          const metadata = await this.sock!.groupMetadata(group.id)
+          for (const p of metadata.participants) {
+            if (p.lid && p.jid) lidToJid.set(p.lid, p.jid)
+            // Also map the id field (which is the lid)
+            if (p.id && p.jid && p.id.endsWith('@lid')) lidToJid.set(p.id, p.jid)
+          }
+          await new Promise(resolve => setTimeout(resolve, 200))
+        } catch {
+          // Skip groups we can't fetch metadata for
+        }
+      }
+
+      console.log(`[baileys] built ${lidToJid.size} LID→JID mappings`)
+
+      // Step 2: For each LID, look up the JID's name in chats table
+      let synced = 0
+      for (const [lid, jid] of lidToJid) {
+        const jidName = this.chatNames.get(jid)
+        if (jidName) {
+          this.chatNames.set(lid, jidName)
+          this.store.upsertChat(lid, jidName, false)
+          synced++
+        }
+      }
+
+      // Step 3: For LIDs without a name yet, store the LID→JID mapping
+      // so we can resolve names later when we get pushNames from live messages
+      let mapped = 0
+      for (const [lid, jid] of lidToJid) {
+        if (!this.chatNames.has(lid)) {
+          // Store JID as name temporarily — better than nothing, gets replaced by pushName later
+          const jidName = this.chatNames.get(jid)
+          if (jidName) {
+            this.chatNames.set(lid, jidName)
+            this.store.upsertChat(lid, jidName, false)
+            synced++
+          } else {
+            // Store the phone number as fallback name
+            const phone = jid.replace('@s.whatsapp.net', '')
+            if (phone && phone !== jid) {
+              this.chatNames.set(lid, phone)
+              this.store.upsertChat(lid, phone, false)
+              mapped++
+            }
+          }
+        }
+      }
+
+      console.log(`[baileys] synced ${synced} named + ${mapped} phone-number members (${lidToJid.size} LID mappings, ${groups.length} groups)`)
+    } catch (err) {
+      console.error('[baileys] group member sync failed:', err)
     }
   }
 
