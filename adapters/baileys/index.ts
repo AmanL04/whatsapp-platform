@@ -66,17 +66,23 @@ export class BaileysAdapter implements WAAdapter {
       if (connection === 'open') {
         console.log('[baileys] connected')
         this.connectedHandlers.forEach(h => h())
-        // Sync group identities once per server lifetime. Skip entirely if
-        // identities table already has data (from a previous run) — new members
-        // are discovered live via lid-mapping.update and pushName on messages.
-        if (!this.groupSyncDone) {
+        // If identities already cached from a previous run, skip group sync entirely.
+        // New members are discovered live via lid-mapping.update and pushName.
+        if (!this.groupSyncDone && identityCacheSize() > 0) {
           this.groupSyncDone = true
-          const cached = identityCacheSize()
-          if (cached === 0) {
-            this.syncGroupMemberNames()
-          } else {
-            console.log(`[baileys] skipping group sync — ${cached} identities already cached`)
-          }
+          console.log(`[baileys] skipping group sync — ${identityCacheSize()} identities already cached`)
+        }
+        // Fallback: if history sync never fires (existing auth session, WhatsApp
+        // considers device already synced), trigger group sync after 30s so chats
+        // populated by contacts/chats events can still be synced.
+        if (!this.groupSyncDone) {
+          setTimeout(() => {
+            if (!this.groupSyncDone) {
+              this.groupSyncDone = true
+              console.log('[baileys] history sync did not fire — running group sync via fallback timer')
+              this.syncGroupMemberNames()
+            }
+          }, 30_000)
         }
       }
       if (connection === 'close') {
@@ -193,6 +199,11 @@ export class BaileysAdapter implements WAAdapter {
       // so Express can respond to health checks
       this.storeHistoryBatch(normalized, rawJsons).then(() => {
         this.dispatchHistoryBatch(normalized)
+        // Trigger group sync after first history batch — chats are now populated
+        if (!this.groupSyncDone) {
+          this.groupSyncDone = true
+          this.syncGroupMemberNames()
+        }
       })
     })
 
@@ -482,14 +493,20 @@ export class BaileysAdapter implements WAAdapter {
       ? (msg[`${type}Message`]?.mimetype ?? undefined)
       : undefined
 
-    const rawSenderId = normalizeJid(raw.key.participant ?? raw.participant ?? rawChatId)
+    // In DMs, participant is absent. For fromMe DMs, remoteJid is the RECIPIENT,
+    // not the sender — use our own JID to avoid attributing our pushName to the contact.
+    const rawSenderId = normalizeJid(
+      raw.key.participant ?? raw.participant ?? (raw.key.fromMe ? this.sock?.user?.id : rawChatId) ?? rawChatId
+    )
     const senderId = resolveCanonicalJid(rawSenderId)
     const senderName = raw.pushName || this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || ''
 
     // Discover LID→phone mappings from DM context
     if (isLid(rawChatId) && !isLid(chatId) && rawChatId !== chatId) {
-      // rawChatId was LID, resolved to phone — save the mapping
-      this.store.upsertIdentity(chatId, rawChatId, raw.pushName || '', raw.pushName ? 'pushName' : '')
+      // rawChatId was LID, resolved to phone — save the mapping.
+      // Only attribute pushName if NOT fromMe — pushName is the sender's name, not the contact's.
+      const contactName = raw.key.fromMe ? '' : (raw.pushName || '')
+      this.store.upsertIdentity(chatId, rawChatId, contactName, contactName ? 'pushName' : '')
       updateIdentityCache(rawChatId, chatId)
     }
 
