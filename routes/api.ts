@@ -15,11 +15,15 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
     }
 
     try {
-      const chats = await adapter.getChats()
+      const limit = Number(req.query.limit ?? 20)
+      const beforeStr = req.query.before as string | undefined
+      const before = beforeStr ? Math.floor(new Date(beforeStr).getTime() / 1000) : undefined
+      const chats = await adapter.getChats({ before, limit })
       const filtered = chats
         .map(c => filterChatForApp(c, app))
         .filter((c): c is NonNullable<typeof c> => c !== null)
-      res.json(filtered)
+      const nextCursor = filtered.length > 0 ? filtered[filtered.length - 1].lastMessageAt.toISOString() : null
+      res.json({ data: filtered, nextCursor })
     } catch (err) {
       res.status(500).json({ error: String(err) })
     }

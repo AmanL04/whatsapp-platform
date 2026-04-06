@@ -11,7 +11,7 @@ export interface WAAdapter {
   isConnected(): boolean
 
   // Read
-  getChats(): Promise<Chat[]>
+  getChats(opts?: { before?: number; limit?: number }): Promise<Chat[]>
   getMessages(query: MessageQuery): Promise<Message[]>
   searchMessages(text: string): Promise<Message[]>
 

@@ -139,9 +139,12 @@ export function createDashboardApiRouter(
   })
 
   // Existing data endpoints (for debug/viewer UI)
-  router.get('/api/chats', async (_req, res) => {
+  router.get('/api/chats', async (req, res) => {
     try {
-      const chats = await adapter.getChats()
+      const limit = Number(req.query.limit ?? 20)
+      const beforeStr = req.query.before as string | undefined
+      const before = beforeStr ? Math.floor(new Date(beforeStr).getTime() / 1000) : undefined
+      const chats = await adapter.getChats({ before, limit })
       res.json(chats)
     } catch (err) {
       res.status(500).json({ error: String(err) })

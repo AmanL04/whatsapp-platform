@@ -194,8 +194,8 @@ export class BaileysAdapter implements WAAdapter {
     return this.sock !== null
   }
 
-  async getChats(): Promise<Chat[]> {
-    return this.store.getChats()
+  async getChats(opts?: { before?: number; limit?: number }): Promise<Chat[]> {
+    return this.store.getChats(opts)
   }
 
   async getMessages(query: MessageQuery): Promise<Message[]> {

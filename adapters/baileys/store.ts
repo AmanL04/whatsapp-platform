@@ -222,10 +222,19 @@ export class SQLiteStore {
     `).run(id, name, isGroup ? 1 : 0)
   }
 
-  getChats(limit = 200): Chat[] {
-    return this.db.prepare(
-      'SELECT * FROM chats ORDER BY last_message_at DESC LIMIT ?'
-    ).all(Math.min(limit, 100)).map(this.rowToChat)
+  getChats(opts: { before?: number; limit?: number } = {}): Chat[] {
+    let sql = 'SELECT * FROM chats WHERE 1=1'
+    const params: (string | number)[] = []
+
+    if (opts.before) {
+      sql += ' AND last_message_at < ?'
+      params.push(opts.before)
+    }
+
+    sql += ' ORDER BY last_message_at DESC LIMIT ?'
+    params.push(Math.min(opts.limit ?? 20, 100))
+
+    return this.db.prepare(sql).all(...params).map(this.rowToChat)
   }
 
   // ─── Media (queries messages table where type != 'text') ────────────────────
