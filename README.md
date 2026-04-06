@@ -124,17 +124,11 @@ npm run reconnect
 
 ## Deploy to Railway
 
-### 1. Push to GitHub
-
-```bash
-gh repo create whatsapp-platform --private --source=. --push
-```
-
-### 2. Create Railway project
+### 1. Create Railway project
 
 Connect the GitHub repo at [railway.app](https://railway.app). The `railway.toml` handles build and start configuration automatically.
 
-### 3. Add a persistent volume
+### 2. Add a persistent volume
 
 **This must be done manually in the Railway dashboard** (not configurable via `railway.toml`):
 
@@ -143,7 +137,7 @@ Connect the GitHub repo at [railway.app](https://railway.app). The `railway.toml
 
 This persists your SQLite database and WhatsApp auth across deploys.
 
-### 4. Set environment variables
+### 3. Set environment variables
 
 In Railway dashboard > Variables:
 
@@ -153,7 +147,7 @@ JWT_SECRET=<generate-a-random-secret>
 DB_ENCRYPTION_SECRET=<generate-a-different-random-secret>
 ```
 
-### 5. First deploy
+### 4. First deploy
 
 Deploy triggers automatically. Check the deployment logs for a QR code — scan it with WhatsApp. The dashboard CORS origin is auto-detected from Railway's `RAILWAY_PUBLIC_DOMAIN` — no manual step needed.
 
