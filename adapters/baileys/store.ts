@@ -170,6 +170,10 @@ export class SQLiteStore {
       sql += ' AND m.timestamp >= ?'
       params.push(Math.floor(query.since.getTime() / 1000))
     }
+    if (query.before) {
+      sql += ' AND m.timestamp < ?'
+      params.push(Math.floor(query.before.getTime() / 1000))
+    }
     if (query.search) {
       sql += ' AND m.content LIKE ?'
       params.push(`%${query.search}%`)
@@ -204,7 +208,8 @@ export class SQLiteStore {
     const media = (this.db.prepare("SELECT COUNT(*) as c FROM messages WHERE type != 'text'").get() as any).c
     const apps = (this.db.prepare('SELECT COUNT(*) as c FROM apps WHERE active = 1').get() as any).c
     const deliveries = (this.db.prepare('SELECT COUNT(*) as c FROM webhook_deliveries').get() as any).c
-    return { messages, chats, media, apps, deliveries }
+    const indexes = (this.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%' ORDER BY name").all() as { name: string }[]).map(r => r.name)
+    return { messages, chats, media, apps, deliveries, indexes }
   }
 
   // ─── Chats ─────────────────────────────────────────────────────────────────
@@ -225,7 +230,7 @@ export class SQLiteStore {
 
   // ─── Media (queries messages table where type != 'text') ────────────────────
 
-  getMedia(filters: { type?: string; sender?: string; source?: 'chat' | 'story'; limit?: number } = {}) {
+  getMedia(filters: { type?: string; sender?: string; source?: 'chat' | 'story'; before?: number; limit?: number } = {}) {
     let sql = `SELECT ${SQLiteStore.MSG_COLS},
       COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
       COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
@@ -247,6 +252,10 @@ export class SQLiteStore {
       sql += " AND m.chat_id = 'status@broadcast'"
     } else if (filters.source === 'chat') {
       sql += " AND m.chat_id != 'status@broadcast'"
+    }
+    if (filters.before) {
+      sql += ' AND m.timestamp < ?'
+      params.push(filters.before)
     }
 
     sql += ' ORDER BY m.timestamp DESC LIMIT ?'

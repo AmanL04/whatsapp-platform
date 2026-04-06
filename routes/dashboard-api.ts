@@ -152,7 +152,9 @@ export function createDashboardApiRouter(
     try {
       const chatId = req.query.chatId as string | undefined
       const limit = Number(req.query.limit ?? 20)
-      const messages = await adapter.getMessages({ chatId, limit })
+      const beforeStr = req.query.before as string | undefined
+      const before = beforeStr ? new Date(beforeStr) : undefined
+      const messages = await adapter.getMessages({ chatId, limit, before })
       res.json(messages)
     } catch (err) {
       res.status(500).json({ error: String(err) })
@@ -164,8 +166,10 @@ export function createDashboardApiRouter(
       const type = req.query.type as string | undefined
       const sender = req.query.sender as string | undefined
       const source = req.query.source as 'chat' | 'story' | undefined
+      const beforeStr = req.query.before as string | undefined
+      const before = beforeStr ? Math.floor(new Date(beforeStr).getTime() / 1000) : undefined
       const limit = Number(req.query.limit ?? 20)
-      const media = store.getMedia({ type, sender, source, limit })
+      const media = store.getMedia({ type, sender, source, before, limit })
       res.json(media)
     } catch (err) {
       res.status(500).json({ error: String(err) })

@@ -26,6 +26,7 @@ export interface Chat {
 export interface MessageQuery {
   chatId?: string
   since?: Date
+  before?: Date    // cursor: get messages before this timestamp
   limit?: number
   search?: string
 }

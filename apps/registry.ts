@@ -6,8 +6,8 @@ import type { EventName } from '../core/events'
 export interface RegisterAppInput {
   name: string
   description?: string
-  webhookGlobalUrl: string
-  webhookEvents: { name: string; url?: string }[]
+  webhookGlobalUrl?: string
+  webhookEvents?: { name: string; url?: string }[]
   permissions: Permission[]
   scopeChatTypes: ('dm' | 'group')[]
   scopeSpecificChats?: string[]
@@ -24,15 +24,18 @@ export class AppRegistry {
 
   registerApp(input: RegisterAppInput): App {
     if (!input.name) throw new Error('App name is required')
-    if (!input.webhookGlobalUrl) throw new Error('Webhook URL is required')
-    if (!input.webhookEvents || input.webhookEvents.length === 0) {
-      throw new Error('At least one event subscription is required')
+
+    // Validate webhook URLs if provided
+    if (input.webhookGlobalUrl) this.validateWebhookUrl(input.webhookGlobalUrl)
+    if (input.webhookEvents) {
+      for (const event of input.webhookEvents) {
+        if (event.url) this.validateWebhookUrl(event.url)
+      }
     }
 
-    // Validate all webhook URLs (global + per-event overrides)
-    this.validateWebhookUrl(input.webhookGlobalUrl)
-    for (const event of input.webhookEvents) {
-      if (event.url) this.validateWebhookUrl(event.url)
+    // Webhook URL required if events are subscribed
+    if (input.webhookEvents?.length && !input.webhookGlobalUrl) {
+      throw new Error('Webhook URL is required when subscribing to events')
     }
 
     const id = 'app_' + crypto.randomBytes(12).toString('hex')
@@ -43,9 +46,9 @@ export class AppRegistry {
       id,
       name: input.name,
       description: input.description ?? '',
-      webhookGlobalUrl: input.webhookGlobalUrl,
+      webhookGlobalUrl: input.webhookGlobalUrl ?? '',
       webhookSecret,
-      webhookEvents: input.webhookEvents,
+      webhookEvents: input.webhookEvents ?? [],
       apiKey,
       permissions: input.permissions,
       scopeChatTypes: input.scopeChatTypes,

@@ -224,10 +224,72 @@ function MediaTab() {
 const EVENT_OPTIONS = ['message.received', 'media.received', 'message.sent', 'chat.updated']
 const PERMISSION_OPTIONS = ['messages.read', 'chats.read', 'media.read', 'media.download', 'messages.send']
 
+function AppEditForm({ app, onSave, onCancel }: { app: AppRecord; onSave: () => void; onCancel: () => void }) {
+  const [webhookUrl, setWebhookUrl] = useState(app.webhookGlobalUrl)
+  const [events, setEvents] = useState<string[]>(app.webhookEvents.map(e => e.name))
+  const [permissions, setPermissions] = useState<string[]>(app.permissions)
+  const [scopeTypes, setScopeTypes] = useState<string[]>(app.scopeChatTypes)
+  const [saving, setSaving] = useState(false)
+
+  const toggleItem = (arr: string[], item: string, setter: (v: string[]) => void) => {
+    setter(arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item])
+  }
+
+  const save = async () => {
+    setSaving(true)
+    await fetch(`${API}/apps/${app.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        webhookGlobalUrl: webhookUrl,
+        webhookEvents: events.map(e => ({ name: e })),
+        permissions,
+        scopeChatTypes: scopeTypes,
+      }),
+    })
+    setSaving(false)
+    onSave()
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-3">
+      <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="Webhook URL"
+        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-sm" />
+      <div>
+        <p className="text-xs font-medium text-gray-500 mb-1">Events</p>
+        <div className="flex flex-wrap gap-2">{EVENT_OPTIONS.map(e => (
+          <button key={e} onClick={() => toggleItem(events, e, setEvents)}
+            className={`px-2 py-1 rounded text-xs ${events.includes(e) ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{e}</button>
+        ))}</div>
+      </div>
+      <div>
+        <p className="text-xs font-medium text-gray-500 mb-1">Permissions</p>
+        <div className="flex flex-wrap gap-2">{PERMISSION_OPTIONS.map(p => (
+          <button key={p} onClick={() => toggleItem(permissions, p, setPermissions)}
+            className={`px-2 py-1 rounded text-xs ${permissions.includes(p) ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{p}</button>
+        ))}</div>
+      </div>
+      <div>
+        <p className="text-xs font-medium text-gray-500 mb-1">Chat Scope</p>
+        <div className="flex gap-2">{['dm', 'group'].map(t => (
+          <button key={t} onClick={() => toggleItem(scopeTypes, t, setScopeTypes)}
+            className={`px-2 py-1 rounded text-xs ${scopeTypes.includes(t) ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{t}</button>
+        ))}</div>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={save} disabled={saving} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
+        <button onClick={onCancel} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 rounded-lg text-xs font-medium">Cancel</button>
+      </div>
+    </div>
+  )
+}
+
 function AppsTab() {
   const { data: apps, loading, refetch } = useFetch<AppRecord[]>(`${API}/apps`)
   const [showForm, setShowForm] = useState(false)
   const [created, setCreated] = useState<AppRecord | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   // Form state
   const [name, setName] = useState('')
@@ -276,9 +338,12 @@ function AppsTab() {
     <div className="p-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold">Registered Apps</h2>
-        <button onClick={() => setShowForm(!showForm)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
-          {showForm ? 'Cancel' : '+ Register App'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={refetch} className="text-sm text-gray-400 hover:text-gray-600">Refresh</button>
+          <button onClick={() => setShowForm(!showForm)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
+            {showForm ? 'Cancel' : '+ Register App'}
+          </button>
+        </div>
       </div>
 
       {/* Created app secrets (shown once) */}
@@ -305,10 +370,10 @@ function AppsTab() {
         <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-3">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="App name" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-sm" />
           <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-sm" />
-          <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="Webhook URL (https://...)" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-sm" />
+          <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="Webhook URL (optional — leave empty for API-only app)" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-sm" />
 
           <div>
-            <p className="text-xs font-medium text-gray-500 mb-1">Events</p>
+            <p className="text-xs font-medium text-gray-500 mb-1">Events (optional — select if using webhooks)</p>
             <div className="flex flex-wrap gap-2">{EVENT_OPTIONS.map(e => (
               <button key={e} onClick={() => toggleItem(events, e, setEvents)}
                 className={`px-2 py-1 rounded text-xs ${events.includes(e) ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{e}</button>
@@ -333,7 +398,7 @@ function AppsTab() {
             </div>
           </div>
 
-          <button onClick={createApp} disabled={!name || !webhookUrl || events.length === 0}
+          <button onClick={createApp} disabled={!name || (events.length > 0 && !webhookUrl)}
             className="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">Register App</button>
         </div>
       )}
@@ -347,16 +412,25 @@ function AppsTab() {
                 <div className="font-medium text-sm">{app.name}</div>
                 <div className="text-xs text-gray-400">{app.description}</div>
               </div>
-              <button onClick={() => deactivate(app.id)} className="text-xs text-red-500 hover:underline">Deactivate</button>
+              <div className="flex gap-2">
+                <button onClick={() => setEditingId(editingId === app.id ? null : app.id)} className="text-xs text-blue-500 hover:underline">
+                  {editingId === app.id ? 'Close' : 'Edit'}
+                </button>
+                <button onClick={() => deactivate(app.id)} className="text-xs text-red-500 hover:underline">Deactivate</button>
+              </div>
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {app.webhookEvents.map((e: { name: string; url?: string }) => (
                 <span key={e.name} className="px-1.5 py-0.5 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded text-xs">{e.name}</span>
               ))}
+              {app.permissions.map(p => (
+                <span key={p} className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded text-xs">{p}</span>
+              ))}
             </div>
             <div className="mt-1 text-xs text-gray-400">
               Key: {app.apiKey} &middot; Scope: {app.scopeChatTypes.join(', ')}
             </div>
+            {editingId === app.id && <AppEditForm app={app} onSave={() => { setEditingId(null); refetch() }} onCancel={() => setEditingId(null)} />}
           </div>
         ))}</div>
       )}

@@ -37,9 +37,11 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
       const chatId = req.query.chatId as string | undefined
       const limit = Number(req.query.limit ?? 20)
       const sinceStr = req.query.since as string | undefined
+      const beforeStr = req.query.before as string | undefined
       const since = sinceStr ? new Date(sinceStr) : undefined
+      const before = beforeStr ? new Date(beforeStr) : undefined
 
-      const query = scopeQuery(app, { chatId, limit, since })
+      const query = scopeQuery(app, { chatId, limit, since, before })
       if (query === null) {
         res.status(403).json({ error: 'chat_id is outside this app\'s scope' })
         return
@@ -49,7 +51,8 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
       const filtered = messages
         .map(m => filterMessageForApp(m, app))
         .filter((m): m is NonNullable<typeof m> => m !== null)
-      res.json(filtered)
+      const nextCursor = filtered.length > 0 ? filtered[filtered.length - 1].timestamp.toISOString() : null
+      res.json({ data: filtered, nextCursor })
     } catch (err) {
       res.status(500).json({ error: String(err) })
     }
@@ -67,10 +70,13 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
       const type = _req.query.type as string | undefined
       const sender = _req.query.sender as string | undefined
       const source = _req.query.source as 'chat' | 'story' | undefined
+      const beforeStr = _req.query.before as string | undefined
+      const before = beforeStr ? Math.floor(new Date(beforeStr).getTime() / 1000) : undefined
       const limit = Number(_req.query.limit ?? 20)
-      const media = store.getMedia({ type, sender, source, limit })
+      const media = store.getMedia({ type, sender, source, before, limit })
       const filtered = media.filter(m => filterMessageForApp(m, app) !== null)
-      res.json(filtered)
+      const nextCursor = filtered.length > 0 ? filtered[filtered.length - 1].timestamp.toISOString() : null
+      res.json({ data: filtered, nextCursor })
     } catch (err) {
       res.status(500).json({ error: String(err) })
     }
