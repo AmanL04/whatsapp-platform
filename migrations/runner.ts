@@ -26,6 +26,8 @@ export function runMigrations(db: Database.Database) {
     .filter(f => f.endsWith('.ts') && f !== 'runner.ts')
     .sort()
 
+  console.log(`[migrations] found ${files.length} migration files, ${ran.size} already ran`)
+
   let count = 0
   for (const file of files) {
     const name = file.replace(/\.ts$/, '')

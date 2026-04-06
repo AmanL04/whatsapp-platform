@@ -172,11 +172,12 @@ async function main() {
   // ─── Start ───────────────────────────────────────────────────────────────
 
   app.listen(PORT, () => {
+    const baseUrl = DASHBOARD_ORIGIN ?? `http://localhost:${PORT}`
     console.log(`[api] listening on http://localhost:${PORT}`)
     console.log(`[api] APP_ENV=${APP_ENV}`)
-    console.log(`[api] health: http://localhost:${PORT}/health`)
-    console.log(`[api] scoped API: http://localhost:${PORT}/api/*`)
-    console.log(`[api] dashboard: http://localhost:${PORT}/dashboard/*`)
+    console.log(`[api] health: ${baseUrl}/health`)
+    console.log(`[api] scoped API: ${baseUrl}/api/*`)
+    console.log(`[api] dashboard: ${baseUrl}/dashboard/`)
   })
 }
 
