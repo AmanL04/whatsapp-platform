@@ -9,7 +9,7 @@ export class SQLiteStore {
   private encryptionKey: string | null
   private derivedKey: Buffer | null = null
 
-  /** Expose raw DB for migrations runner */
+  /** Expose raw DB for cascade normalization in the adapter */
   getDb(): Database.Database { return this.db }
 
   constructor(dbPath = './data/whatsapp.db', encryptionKey?: string) {
@@ -23,89 +23,6 @@ export class SQLiteStore {
     if (this.encryptionKey) {
       this.derivedKey = crypto.scryptSync(this.encryptionKey, 'salt', 32)
     }
-    this.init()
-  }
-
-  private init() {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id TEXT PRIMARY KEY,
-        chat_id TEXT NOT NULL,
-        sender_id TEXT,
-        sender_name TEXT,
-        content TEXT,
-        type TEXT DEFAULT 'text',
-        mime_type TEXT,
-        timestamp INTEGER,
-        is_from_me INTEGER DEFAULT 0,
-        is_group INTEGER DEFAULT 0,
-        group_name TEXT,
-        reply_to TEXT,
-        raw_json TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS chats (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        is_group INTEGER DEFAULT 0,
-        last_message_at INTEGER,
-        unread_count INTEGER DEFAULT 0
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_messages_chat_ts ON messages(chat_id, timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_messages_media ON messages(timestamp DESC) WHERE type != 'text';
-      CREATE INDEX IF NOT EXISTS idx_chats_last_msg ON chats(last_message_at DESC);
-
-      CREATE TABLE IF NOT EXISTS apps (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        description TEXT,
-        webhook_global_url TEXT,
-        webhook_secret TEXT,
-        webhook_events TEXT,
-        api_key TEXT NOT NULL,
-        permissions TEXT,
-        scope_chat_types TEXT,
-        scope_specific_chats TEXT,
-        active INTEGER DEFAULT 1,
-        created_at INTEGER
-      );
-
-      CREATE TABLE IF NOT EXISTS webhook_deliveries (
-        id TEXT PRIMARY KEY,
-        app_id TEXT,
-        event TEXT,
-        payload TEXT,
-        status TEXT,
-        attempts INTEGER DEFAULT 0,
-        last_attempt_at INTEGER,
-        response_status INTEGER,
-        created_at INTEGER
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_deliveries_app_ts ON webhook_deliveries(app_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_deliveries_status_ts ON webhook_deliveries(status, created_at);
-
-      CREATE TABLE IF NOT EXISTS identities (
-        canonical_jid TEXT NOT NULL,
-        alias_jid TEXT PRIMARY KEY,
-        display_name TEXT DEFAULT '',
-        name_source TEXT DEFAULT '',
-        updated_at INTEGER
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_identities_canonical ON identities(canonical_jid);
-
-      CREATE TABLE IF NOT EXISTS reactions (
-        message_id TEXT NOT NULL,
-        sender_id TEXT NOT NULL,
-        emoji TEXT NOT NULL,
-        created_at INTEGER,
-        PRIMARY KEY (message_id, sender_id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions(message_id);
-    `)
   }
 
   // ─── Batch operations ───────────────────────────────────────────────────────
@@ -400,6 +317,49 @@ export class SQLiteStore {
     const chats = this.db.prepare(sql).all(...params).map(this.rowToChat)
 
     return chats
+  }
+
+  // ─── Group Metadata ────────────────────────────────────────────────────────
+
+  updateGroupMetadata(groupJid: string, subject: string, participants: any[]) {
+    this.db.prepare(`
+      UPDATE chats SET
+        name = CASE WHEN ? != '' THEN ? ELSE name END,
+        participants = ?,
+        group_metadata_updated_at = ?
+      WHERE id = ?
+    `).run(subject, subject, JSON.stringify(participants), Math.floor(Date.now() / 1000), groupJid)
+
+    // Ensure chat row exists (if we got metadata before any messages)
+    const result = this.db.prepare('SELECT 1 FROM chats WHERE id = ?').get(groupJid)
+    if (!result) {
+      this.db.prepare(`
+        INSERT INTO chats (id, name, is_group, last_message_at, unread_count, participants, group_metadata_updated_at)
+        VALUES (?, ?, 1, 0, 0, ?, ?)
+      `).run(groupJid, subject, JSON.stringify(participants), Math.floor(Date.now() / 1000))
+    }
+  }
+
+  getGroupParticipants(groupJid: string): { subject: string; participants: any[] } | null {
+    const row = this.db.prepare('SELECT name, participants FROM chats WHERE id = ? AND participants IS NOT NULL').get(groupJid) as { name: string; participants: string } | undefined
+    if (!row) return null
+    return { subject: row.name || '', participants: JSON.parse(row.participants) }
+  }
+
+  loadAllGroupMetadata(): Map<string, { subject: string; participants: any[] }> {
+    const map = new Map<string, { subject: string; participants: any[] }>()
+    const rows = this.db.prepare('SELECT id, name, participants FROM chats WHERE is_group = 1 AND participants IS NOT NULL').all() as { id: string; name: string; participants: string }[]
+    for (const r of rows) {
+      map.set(r.id, { subject: r.name || '', participants: JSON.parse(r.participants) })
+    }
+    return map
+  }
+
+  getStaleGroups(maxAgeSeconds: number): string[] {
+    const cutoff = Math.floor(Date.now() / 1000) - maxAgeSeconds
+    return (this.db.prepare(
+      'SELECT id FROM chats WHERE is_group = 1 AND (group_metadata_updated_at IS NULL OR group_metadata_updated_at < ?)'
+    ).all(cutoff) as { id: string }[]).map(r => r.id)
   }
 
   // ─── Media (queries messages table where type != 'text') ────────────────────

@@ -71,6 +71,7 @@ Events are POSTed to the app's webhook URL, signed with `X-Webhook-Signature: sh
 | `message.received` | A message arrives in a scoped chat |
 | `media.received` | Image/video/audio/document received |
 | `message.sent` | You send a message |
+| `message.reaction` | Emoji reaction added or removed |
 | `chat.updated` | Chat metadata changes |
 
 Delivery retries 3x with exponential backoff (1s, 5s, 30s). Delivery logs are kept for 30 days.
@@ -95,6 +96,7 @@ Login via WhatsApp OTP (the server sends a code to your connected number). 1-hou
 
 | Tab | Purpose |
 |---|---|
+| Overview | Stats dashboard — message count, chats, media, apps |
 | Messages | Live message viewer — chats + messages (debug tool) |
 | Media | Media grid with filters: type, sender, story vs chat |
 | Apps | Register/manage external apps |
@@ -171,11 +173,12 @@ Deploy triggers automatically. Check the deployment logs for a QR code — scan 
 index.ts                    — entrypoint (Express + Baileys + dispatcher)
 core/
   adapter.ts                — WAAdapter interface
-  types.ts                  — Message, Chat, Media, App, Permission
+  types.ts                  — Message, Chat, Reaction, App, Permission
   events.ts                 — EventName, WebhookEnvelope
+  jid.ts                    — JID normalization, identity cache, canonical resolution
 adapters/baileys/
   index.ts                  — Baileys adapter (connection, normalization, events)
-  store.ts                  — SQLite store (messages, chats, media, apps, deliveries)
+  store.ts                  — SQLite store (queries, encryption, row mappers — schema lives in migrations/)
 apps/
   registry.ts               — app CRUD + subscription matching
   dispatcher.ts             — webhook delivery + HMAC signing + retry
@@ -189,5 +192,13 @@ routes/
   dashboard-api.ts          — admin endpoints for dashboard
 cli/
   reconnect.ts              — emergency reconnect command
+migrations/
+  runner.ts                 — migration runner (sorted, transactional, idempotent)
+  run.ts                    — standalone entry point (npm run migrate)
+  0001_initial-schema.ts    — all tables + indexes
+  0002_group-metadata-cache.ts — group participants + staleness columns
+docs/
+  identity-resolution.md    — WhatsApp JID/LID identity resolution design
+  group-metadata-caching.md — group metadata caching plan
 dashboard/                  — Vite + React + Tailwind SPA
 ```

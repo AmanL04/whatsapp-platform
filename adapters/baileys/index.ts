@@ -9,7 +9,7 @@ import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import type { WAAdapter } from '../../core/adapter'
 import type { Chat, Message, MessageQuery } from '../../core/types'
-import { normalizeJid, isLid, isStatusBroadcast, resolveCanonicalJid, loadIdentityCache, updateIdentityCache, identityCacheSize } from '../../core/jid'
+import { normalizeJid, isLid, isStatusBroadcast, resolveCanonicalJid, loadIdentityCache, updateIdentityCache } from '../../core/jid'
 import { SQLiteStore } from './store'
 
 export class BaileysAdapter implements WAAdapter {
@@ -17,7 +17,7 @@ export class BaileysAdapter implements WAAdapter {
   private authDir: string
   private store: SQLiteStore
   private chatNames: Map<string, string> = new Map()
-  private groupSyncDone = false
+  private groupCache: Map<string, { subject: string; participants: any[] }> = new Map()
   private dispatchEvent?: (event: string, payload: unknown, chatId: string, isGroup: boolean) => void
   private messageHandlers: ((msg: Message) => void)[] = []
   private connectedHandlers: (() => void)[] = []
@@ -26,8 +26,20 @@ export class BaileysAdapter implements WAAdapter {
   constructor(authDir = './data/auth', dbPath = './data/whatsapp.db', dbEncryptionKey?: string) {
     this.authDir = authDir
     this.store = new SQLiteStore(dbPath, dbEncryptionKey)
-    // Load identity cache from DB
+    // Load caches from DB
     loadIdentityCache(this.store.loadAllIdentities())
+    this.loadGroupCacheFromDb()
+  }
+
+  private loadGroupCacheFromDb() {
+    const groups = this.store.loadAllGroupMetadata()
+    for (const [jid, meta] of groups) {
+      this.groupCache.set(jid, meta)
+      this.chatNames.set(jid, meta.subject)
+    }
+    if (groups.size > 0) {
+      console.log(`[store] loaded ${groups.size} group metadata entries from DB`)
+    }
   }
 
   getStore(): SQLiteStore {
@@ -52,6 +64,11 @@ export class BaileysAdapter implements WAAdapter {
       version,
       auth: state,
       syncFullHistory: true,
+      cachedGroupMetadata: async (jid) => {
+        const cached = this.groupCache.get(jid)
+        if (!cached) return undefined
+        return { id: jid, subject: cached.subject, participants: cached.participants } as any
+      },
     })
 
     this.sock.ev.on('creds.update', saveCreds)
@@ -66,24 +83,8 @@ export class BaileysAdapter implements WAAdapter {
       if (connection === 'open') {
         console.log('[baileys] connected')
         this.connectedHandlers.forEach(h => h())
-        // If identities already cached from a previous run, skip group sync entirely.
-        // New members are discovered live via lid-mapping.update and pushName.
-        if (!this.groupSyncDone && identityCacheSize() > 0) {
-          this.groupSyncDone = true
-          console.log(`[baileys] skipping group sync — ${identityCacheSize()} identities already cached`)
-        }
-        // Fallback: if history sync never fires (existing auth session, WhatsApp
-        // considers device already synced), trigger group sync after 30s so chats
-        // populated by contacts/chats events can still be synced.
-        if (!this.groupSyncDone) {
-          setTimeout(() => {
-            if (!this.groupSyncDone) {
-              this.groupSyncDone = true
-              console.log('[baileys] history sync did not fire — running group sync via fallback timer')
-              this.syncGroupMemberNames()
-            }
-          }, 30_000)
-        }
+        // Refresh stale group metadata in background (only fetches groups older than 24h)
+        this.refreshStaleGroups()
       }
       if (connection === 'close') {
         const code = (lastDisconnect?.error as Boom)?.output?.statusCode
@@ -147,8 +148,24 @@ export class BaileysAdapter implements WAAdapter {
         if (group.id && group.subject) {
           this.chatNames.set(group.id, group.subject)
           this.store.upsertChat(group.id, group.subject, true)
+          // Persist full metadata if participants available
+          if (group.participants) {
+            this.groupCache.set(group.id, { subject: group.subject, participants: group.participants })
+            this.store.updateGroupMetadata(group.id, group.subject, group.participants)
+          }
         }
       }
+    })
+
+    this.sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
+      // Refresh full metadata on member changes — the event only tells us who changed, not the full list
+      if (!this.sock) return
+      try {
+        const metadata = await this.sock.groupMetadata(id)
+        this.groupCache.set(id, { subject: metadata.subject, participants: metadata.participants })
+        this.store.updateGroupMetadata(id, metadata.subject, metadata.participants)
+        this.extractIdentitiesFromParticipants(metadata.participants)
+      } catch { /* non-critical */ }
     })
 
     // LID↔phone mappings from WhatsApp (most reliable source)
@@ -199,11 +216,6 @@ export class BaileysAdapter implements WAAdapter {
       // so Express can respond to health checks
       this.storeHistoryBatch(normalized, rawJsons).then(() => {
         this.dispatchHistoryBatch(normalized)
-        // Trigger group sync after first history batch — chats are now populated
-        if (!this.groupSyncDone) {
-          this.groupSyncDone = true
-          this.syncGroupMemberNames()
-        }
       })
     })
 
@@ -359,59 +371,77 @@ export class BaileysAdapter implements WAAdapter {
     }
   }
 
-  // ─── Group member name sync ─────────────────────────────────────────────────
+  // ─── Group metadata refresh ─────────────────────────────────────────────────
 
-  private async syncGroupMemberNames() {
+  private async refreshStaleGroups() {
     if (!this.sock) return
     try {
-      const chats = this.store.getChats({ limit: 500 })
-      const groups = chats.filter(c => c.isGroup && c.id.endsWith('@g.us'))
+      const staleJids = this.store.getStaleGroups(24 * 60 * 60) // older than 24h
+      if (staleJids.length === 0) {
+        console.log(`[baileys] all ${this.groupCache.size} groups fresh — skipping metadata refresh`)
+        return
+      }
 
-      console.log(`[baileys] syncing member identities for ${groups.length} groups`)
+      console.log(`[baileys] refreshing metadata for ${staleJids.length} stale groups (${this.groupCache.size} cached)`)
 
-      // Fetch all group metadata
       const allMappings: { lid: string; phoneJid: string }[] = []
-      for (const group of groups) {
+      for (const jid of staleJids) {
         try {
-          const metadata = await this.sock!.groupMetadata(group.id)
+          const metadata = await this.sock!.groupMetadata(jid)
+          this.groupCache.set(jid, { subject: metadata.subject, participants: metadata.participants })
+          this.chatNames.set(jid, metadata.subject)
+          this.store.updateGroupMetadata(jid, metadata.subject, metadata.participants)
+
           for (const p of metadata.participants) {
             const lid = p.lid || (p.id?.endsWith('@lid') ? p.id : null)
-            const jid = p.jid
-            if (lid && jid) allMappings.push({ lid, phoneJid: jid })
+            const pJid = p.jid
+            if (lid && pJid) allMappings.push({ lid, phoneJid: pJid })
           }
           await new Promise(resolve => setTimeout(resolve, 200))
         } catch { /* skip */ }
       }
 
-      console.log(`[baileys] built ${allMappings.length} LID→phone mappings`)
+      // Persist identity mappings
+      if (allMappings.length > 0) {
+        this.extractIdentitiesFromMappings(allMappings)
+        this.deferredCascade(allMappings)
+      }
 
-      // Persist to identities table + update cache
-      let named = 0
-      this.store.runInTransaction(() => {
-        for (const { lid, phoneJid } of allMappings) {
-          const phone = phoneJid.replace('@s.whatsapp.net', '')
-          const existingName = this.chatNames.get(phoneJid) || this.chatNames.get(lid) || ''
-          const name = existingName || phone
-          const nameSource = existingName ? 'contact' : 'phone'
-
-          // Create identity entries: lid → phoneJid (canonical)
-          this.store.upsertIdentity(phoneJid, lid, name, nameSource)
-          this.store.upsertIdentity(phoneJid, phoneJid, name, nameSource)
-          updateIdentityCache(lid, phoneJid)
-          updateIdentityCache(phoneJid, phoneJid)
-          this.chatNames.set(lid, name)
-
-          if (existingName) named++
-        }
-      })
-
-      // Deferred: normalize old messages in small batches, yielding between each
-      this.deferredCascade(allMappings)
-
-      console.log(`[baileys] synced ${named} named + ${allMappings.length - named} phone-number identities`)
+      console.log(`[baileys] refreshed ${staleJids.length} groups, ${allMappings.length} LID→phone mappings`)
     } catch (err) {
-      console.error('[baileys] group member sync failed:', err)
+      console.error('[baileys] group metadata refresh failed:', err)
     }
+  }
+
+  private extractIdentitiesFromParticipants(participants: any[]) {
+    const mappings: { lid: string; phoneJid: string }[] = []
+    for (const p of participants) {
+      const lid = p.lid || (p.id?.endsWith('@lid') ? p.id : null)
+      const pJid = p.jid
+      if (lid && pJid) mappings.push({ lid, phoneJid: pJid })
+    }
+    if (mappings.length > 0) this.extractIdentitiesFromMappings(mappings)
+  }
+
+  private extractIdentitiesFromMappings(mappings: { lid: string; phoneJid: string }[]) {
+    let named = 0
+    this.store.runInTransaction(() => {
+      for (const { lid, phoneJid } of mappings) {
+        const phone = phoneJid.replace('@s.whatsapp.net', '')
+        const existingName = this.chatNames.get(phoneJid) || this.chatNames.get(lid) || ''
+        const name = existingName || phone
+        const nameSource = existingName ? 'contact' : 'phone'
+
+        this.store.upsertIdentity(phoneJid, lid, name, nameSource)
+        this.store.upsertIdentity(phoneJid, phoneJid, name, nameSource)
+        updateIdentityCache(lid, phoneJid)
+        updateIdentityCache(phoneJid, phoneJid)
+        this.chatNames.set(lid, name)
+
+        if (existingName) named++
+      }
+    })
+    console.log(`[baileys] extracted ${named} named + ${mappings.length - named} phone-number identities`)
   }
 
   // ─── History sync batched dispatch ──────────────────────────────────────────
@@ -435,30 +465,35 @@ export class BaileysAdapter implements WAAdapter {
     }
   }
 
-  // ─── Group name resolution ─────────────────────────────────────────────────
+  // ─── Group name resolution (3-tier: memory → SQLite → API) ─────────────────
 
   private async resolveGroupName(msg: Message): Promise<void> {
     if (!msg.isGroup || msg.groupName) return
-    if (!this.sock) return
 
-    // Check cache first
-    const cached = this.chatNames.get(msg.chatId)
-    if (cached) {
-      msg.groupName = cached
+    // 1. In-memory cache
+    const cached = this.groupCache.get(msg.chatId)
+    if (cached) { msg.groupName = cached.subject; return }
+
+    // 2. SQLite
+    const stored = this.store.getGroupParticipants(msg.chatId)
+    if (stored) {
+      this.groupCache.set(msg.chatId, stored)
+      this.chatNames.set(msg.chatId, stored.subject)
+      msg.groupName = stored.subject
       return
     }
 
-    // Fetch from WhatsApp
+    // 3. API (last resort)
+    if (!this.sock) return
     try {
       const metadata = await this.sock.groupMetadata(msg.chatId)
-      if (metadata.subject) {
-        this.chatNames.set(msg.chatId, metadata.subject)
-        this.store.upsertChat(msg.chatId, metadata.subject, true)
-        msg.groupName = metadata.subject
-      }
-    } catch (err) {
-      // Silently fail — name stays undefined
-    }
+      this.groupCache.set(msg.chatId, { subject: metadata.subject, participants: metadata.participants })
+      this.chatNames.set(msg.chatId, metadata.subject)
+      this.store.upsertChat(msg.chatId, metadata.subject, true)
+      this.store.updateGroupMetadata(msg.chatId, metadata.subject, metadata.participants)
+      this.extractIdentitiesFromParticipants(metadata.participants)
+      msg.groupName = metadata.subject
+    } catch { /* silent */ }
   }
 
   // ─── Normalisation helpers ────────────────────────────────────────────────

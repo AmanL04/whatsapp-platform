@@ -17,4 +17,4 @@ COPY . .
 
 EXPOSE 6745
 
-CMD ["npx", "tsx", "index.ts"]
+CMD ["npm", "run", "start"]
