@@ -100,16 +100,21 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
 // ─── Messages Tab ────────────────────────────────────────────────────────────
 
 function MessagesTab() {
-  const { data: chats, loading: chatsLoading } = useFetch<Chat[]>(`${API}/chats`)
+  const { data: chats, loading: chatsLoading, refetch: refetchChats } = useFetch<Chat[]>(`${API}/chats`)
   const [selectedChat, setSelectedChat] = useState<string | null>(null)
-  const { data: messages, loading: msgsLoading } = useFetch<Message[]>(
+  const { data: messages, loading: msgsLoading, refetch: refetchMsgs } = useFetch<Message[]>(
     selectedChat ? `${API}/messages?chatId=${selectedChat}&limit=100` : `${API}/messages?limit=100`,
   )
+
+  const refresh = () => { refetchChats(); refetchMsgs() }
 
   return (
     <div className="flex h-[calc(100vh-60px)]">
       <div className="w-72 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
-        <h3 className="p-3 font-semibold text-sm text-gray-500 uppercase">Chats</h3>
+        <div className="flex items-center justify-between p-3">
+          <h3 className="font-semibold text-sm text-gray-500 uppercase">Chats</h3>
+          <button onClick={refresh} className="text-xs text-gray-400 hover:text-gray-600">Refresh</button>
+        </div>
         {chatsLoading ? <p className="p-3 text-gray-400">Loading...</p> : (chats ?? []).map(chat => (
           <button key={chat.id} onClick={() => setSelectedChat(chat.id)}
             className={`w-full text-left p-3 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 ${selectedChat === chat.id ? 'bg-green-50 dark:bg-green-900/20' : ''}`}>
@@ -153,11 +158,14 @@ function MediaTab() {
   if (senderFilter) params.set('sender', senderFilter)
   params.set('limit', '100')
 
-  const { data: media, loading } = useFetch<Message[]>(`${API}/media?${params}`)
+  const { data: media, loading, refetch } = useFetch<Message[]>(`${API}/media?${params}`)
 
   return (
     <div className="p-6">
-      <h2 className="text-lg font-semibold mb-4">Recent Media</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">Recent Media</h2>
+        <button onClick={refetch} className="text-sm text-gray-400 hover:text-gray-600">Refresh</button>
+      </div>
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -435,6 +443,31 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'logs', label: 'Logs' },
 ]
 
+interface Stats { messages: number; chats: number; media: number; apps: number; deliveries: number }
+
+function StatsBar() {
+  const [tick, setTick] = useState(0)
+  const { data: stats } = useFetch<Stats>(`${API}/stats?_t=${tick}`)
+
+  // Auto-refresh every 5s
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  if (!stats) return null
+  const s = stats
+  return (
+    <div className="flex items-center gap-4 px-4 py-1.5 bg-gray-100 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 text-xs text-gray-500">
+      <span>{s.messages.toLocaleString()} messages</span>
+      <span>{s.chats.toLocaleString()} chats</span>
+      <span>{s.media.toLocaleString()} media</span>
+      <span>{s.apps} apps</span>
+      <span>{s.deliveries.toLocaleString()} deliveries</span>
+    </div>
+  )
+}
+
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [tab, setTab] = useState<Tab>('messages')
@@ -461,6 +494,7 @@ export default function App() {
           </button>
         ))}
       </nav>
+      <StatsBar />
 
       {tab === 'messages' && <MessagesTab />}
       {tab === 'media' && <MediaTab />}
