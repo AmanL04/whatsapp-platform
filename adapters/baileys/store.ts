@@ -7,6 +7,7 @@ import type { Chat, Message, MessageQuery } from '../../core/types'
 export class SQLiteStore {
   private db: Database.Database
   private encryptionKey: string | null
+  private derivedKey: Buffer | null = null
 
   /** Expose raw DB for migrations runner */
   getDb(): Database.Database { return this.db }
@@ -18,6 +19,10 @@ export class SQLiteStore {
     this.db = new Database(dbPath)
     this.db.pragma('journal_mode = WAL')
     this.encryptionKey = encryptionKey ?? null
+    // Derive the encryption key once — scryptSync is deliberately slow (~100ms)
+    if (this.encryptionKey) {
+      this.derivedKey = crypto.scryptSync(this.encryptionKey, 'salt', 32)
+    }
     this.init()
   }
 
@@ -255,21 +260,19 @@ export class SQLiteStore {
   // DB file exfiltration without env vars (e.g. backup leak, volume export).
 
   encryptField(value: string): string {
-    if (!this.encryptionKey) return value
+    if (!this.derivedKey) return value
     const iv = crypto.randomBytes(16)
-    const key = crypto.scryptSync(this.encryptionKey, 'salt', 32)
-    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
+    const cipher = crypto.createCipheriv('aes-256-cbc', this.derivedKey, iv)
     const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()])
     return iv.toString('hex') + ':' + encrypted.toString('hex')
   }
 
   decryptField(value: string): string {
-    if (!this.encryptionKey) return value
+    if (!this.derivedKey) return value
     const [ivHex, encHex] = value.split(':')
     if (!ivHex || !encHex) return value // not encrypted, return as-is
     const iv = Buffer.from(ivHex, 'hex')
-    const key = crypto.scryptSync(this.encryptionKey, 'salt', 32)
-    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+    const decipher = crypto.createDecipheriv('aes-256-cbc', this.derivedKey, iv)
     const decrypted = Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()])
     return decrypted.toString('utf8')
   }
