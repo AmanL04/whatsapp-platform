@@ -218,7 +218,7 @@ function MessagesTab() {
   const PAGE = 50
 
   // Load initial chats
-  const loadChats = useCallback(async (reset = false) => {
+  const loadChats = useCallback(async () => {
     setCl(true)
     try {
       const r = await apiFetch(`${API}/chats?limit=${PAGE}`)

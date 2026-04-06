@@ -203,11 +203,6 @@ export class SQLiteStore {
     }
   }
 
-  getCanonicalJid(aliasJid: string): string | null {
-    if (!aliasJid) return null
-    const row = this.db.prepare('SELECT canonical_jid FROM identities WHERE alias_jid = ?').get(aliasJid) as { canonical_jid: string } | undefined
-    return row?.canonical_jid ?? null
-  }
 
   resolveDisplayName(jid: string): string {
     if (!jid) return ''

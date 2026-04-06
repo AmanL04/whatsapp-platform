@@ -17,10 +17,6 @@ export function isGroup(jid: string): boolean {
   return jid.endsWith('@g.us')
 }
 
-export function isStatusBroadcast(jid: string): boolean {
-  return jid === 'status@broadcast'
-}
-
 /**
  * Identity cache — in-memory Map<alias_jid, canonical_jid>.
  * Loaded from DB on startup, updated when new mappings discovered.

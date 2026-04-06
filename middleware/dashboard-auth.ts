@@ -119,11 +119,6 @@ export class DashboardAuth {
     res.json({ ok: true })
   }
 
-  /** Generate a one-time emergency token (for CLI use) */
-  generateEmergencyToken(): string {
-    return jwt.sign({ type: 'dashboard', emergency: true }, this.jwtSecret, { expiresIn: JWT_EXPIRY })
-  }
-
   /** Check if the current session is valid */
   checkSession(req: Request, res: Response) {
     const token = req.cookies?.wa_session
