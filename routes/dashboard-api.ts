@@ -112,7 +112,11 @@ export function createDashboardApiRouter(
       const limit = Number(req.query.limit ?? 20)
       const appId = req.query.appId as string | undefined
       const status = req.query.status as string | undefined
-      const deliveries = store.getDeliveries({ appId, status, limit })
+      const afterStr = req.query.after as string | undefined
+      const beforeStr = req.query.before as string | undefined
+      const after = afterStr ? Math.floor(new Date(afterStr).getTime() / 1000) : undefined
+      const before = beforeStr ? Math.floor(new Date(beforeStr).getTime() / 1000) : undefined
+      const deliveries = store.getDeliveries({ appId, status, after, before, limit })
       res.json(deliveries)
     } catch (err) {
       res.status(500).json({ error: String(err) })
@@ -122,7 +126,9 @@ export function createDashboardApiRouter(
   router.get('/api/apps/:id/deliveries', (req, res) => {
     try {
       const limit = Number(req.query.limit ?? 20)
-      const deliveries = store.getDeliveries({ appId: req.params.id, limit })
+      const after = req.query.after ? Math.floor(new Date(req.query.after as string).getTime() / 1000) : undefined
+      const before = req.query.before ? Math.floor(new Date(req.query.before as string).getTime() / 1000) : undefined
+      const deliveries = store.getDeliveries({ appId: req.params.id, after, before, limit })
       res.json(deliveries)
     } catch (err) {
       res.status(500).json({ error: String(err) })
@@ -142,9 +148,11 @@ export function createDashboardApiRouter(
   router.get('/api/chats', async (req, res) => {
     try {
       const limit = Number(req.query.limit ?? 20)
+      const afterStr = req.query.after as string | undefined
       const beforeStr = req.query.before as string | undefined
+      const after = afterStr ? Math.floor(new Date(afterStr).getTime() / 1000) : undefined
       const before = beforeStr ? Math.floor(new Date(beforeStr).getTime() / 1000) : undefined
-      const chats = await adapter.getChats({ before, limit })
+      const chats = await adapter.getChats({ after, before, limit })
       res.json(chats)
     } catch (err) {
       res.status(500).json({ error: String(err) })
@@ -155,9 +163,11 @@ export function createDashboardApiRouter(
     try {
       const chatId = req.query.chatId as string | undefined
       const limit = Number(req.query.limit ?? 20)
+      const afterStr = req.query.after as string | undefined
       const beforeStr = req.query.before as string | undefined
+      const after = afterStr ? new Date(afterStr) : undefined
       const before = beforeStr ? new Date(beforeStr) : undefined
-      const messages = await adapter.getMessages({ chatId, limit, before })
+      const messages = await adapter.getMessages({ chatId, limit, after, before })
       res.json(messages)
     } catch (err) {
       res.status(500).json({ error: String(err) })
@@ -169,10 +179,12 @@ export function createDashboardApiRouter(
       const type = req.query.type as string | undefined
       const sender = req.query.sender as string | undefined
       const source = req.query.source as 'chat' | 'story' | undefined
+      const afterStr = req.query.after as string | undefined
       const beforeStr = req.query.before as string | undefined
+      const after = afterStr ? Math.floor(new Date(afterStr).getTime() / 1000) : undefined
       const before = beforeStr ? Math.floor(new Date(beforeStr).getTime() / 1000) : undefined
       const limit = Number(req.query.limit ?? 20)
-      const media = store.getMedia({ type, sender, source, before, limit })
+      const media = store.getMedia({ type, sender, source, after, before, limit })
       res.json(media)
     } catch (err) {
       res.status(500).json({ error: String(err) })

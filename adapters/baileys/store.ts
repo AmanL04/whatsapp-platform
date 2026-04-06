@@ -166,9 +166,9 @@ export class SQLiteStore {
       sql += ' AND m.chat_id = ?'
       params.push(query.chatId)
     }
-    if (query.since) {
-      sql += ' AND m.timestamp >= ?'
-      params.push(Math.floor(query.since.getTime() / 1000))
+    if (query.after) {
+      sql += ' AND m.timestamp > ?'
+      params.push(Math.floor(query.after.getTime() / 1000))
     }
     if (query.before) {
       sql += ' AND m.timestamp < ?'
@@ -185,16 +185,29 @@ export class SQLiteStore {
     return this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
   }
 
-  searchMessages(text: string): Message[] {
-    return this.db.prepare(
-      `SELECT ${SQLiteStore.MSG_COLS},
-        COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
-        COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
+  searchMessages(text: string, opts: { after?: number; before?: number; limit?: number } = {}): Message[] {
+    let sql = `SELECT ${SQLiteStore.MSG_COLS},
+      COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
+      COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
       FROM messages m
       LEFT JOIN chats c_chat ON m.chat_id = c_chat.id
       LEFT JOIN chats c_sender ON m.sender_id = c_sender.id
-      WHERE m.content LIKE ? ORDER BY m.timestamp DESC LIMIT 100`
-    ).all(`%${text}%`).map(this.rowToMessageWithResolvedNames)
+      WHERE m.content LIKE ?`
+    const params: (string | number)[] = [`%${text}%`]
+
+    if (opts.after) {
+      sql += ' AND m.timestamp > ?'
+      params.push(opts.after)
+    }
+    if (opts.before) {
+      sql += ' AND m.timestamp < ?'
+      params.push(opts.before)
+    }
+
+    sql += ' ORDER BY m.timestamp DESC LIMIT ?'
+    params.push(Math.min(opts.limit ?? 20, 100))
+
+    return this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
   }
 
   getRawJson(messageId: string): string | null {
@@ -222,10 +235,14 @@ export class SQLiteStore {
     `).run(id, name, isGroup ? 1 : 0)
   }
 
-  getChats(opts: { before?: number; limit?: number } = {}): Chat[] {
+  getChats(opts: { after?: number; before?: number; limit?: number } = {}): Chat[] {
     let sql = 'SELECT * FROM chats WHERE 1=1'
     const params: (string | number)[] = []
 
+    if (opts.after) {
+      sql += ' AND last_message_at > ?'
+      params.push(opts.after)
+    }
     if (opts.before) {
       sql += ' AND last_message_at < ?'
       params.push(opts.before)
@@ -239,7 +256,7 @@ export class SQLiteStore {
 
   // ─── Media (queries messages table where type != 'text') ────────────────────
 
-  getMedia(filters: { type?: string; sender?: string; source?: 'chat' | 'story'; before?: number; limit?: number } = {}) {
+  getMedia(filters: { type?: string; sender?: string; source?: 'chat' | 'story'; after?: number; before?: number; limit?: number } = {}) {
     let sql = `SELECT ${SQLiteStore.MSG_COLS},
       COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
       COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
@@ -261,6 +278,10 @@ export class SQLiteStore {
       sql += " AND m.chat_id = 'status@broadcast'"
     } else if (filters.source === 'chat') {
       sql += " AND m.chat_id != 'status@broadcast'"
+    }
+    if (filters.after) {
+      sql += ' AND m.timestamp > ?'
+      params.push(filters.after)
     }
     if (filters.before) {
       sql += ' AND m.timestamp < ?'
@@ -409,12 +430,14 @@ export class SQLiteStore {
     this.db.prepare(`UPDATE webhook_deliveries SET ${sets.join(', ')} WHERE id = ?`).run(...params)
   }
 
-  getDeliveries(filters: { appId?: string; status?: string; limit?: number } = {}) {
+  getDeliveries(filters: { appId?: string; status?: string; after?: number; before?: number; limit?: number } = {}) {
     let sql = 'SELECT * FROM webhook_deliveries WHERE 1=1'
     const params: any[] = []
 
     if (filters.appId) { sql += ' AND app_id = ?'; params.push(filters.appId) }
     if (filters.status) { sql += ' AND status = ?'; params.push(filters.status) }
+    if (filters.after) { sql += ' AND created_at > ?'; params.push(filters.after) }
+    if (filters.before) { sql += ' AND created_at < ?'; params.push(filters.before) }
 
     sql += ' ORDER BY created_at DESC LIMIT ?'
     params.push(Math.min(filters.limit ?? 20, 100))

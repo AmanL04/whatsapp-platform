@@ -16,14 +16,21 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
 
     try {
       const limit = Number(req.query.limit ?? 20)
+      const afterStr = req.query.after as string | undefined
       const beforeStr = req.query.before as string | undefined
+      const after = afterStr ? Math.floor(new Date(afterStr).getTime() / 1000) : undefined
       const before = beforeStr ? Math.floor(new Date(beforeStr).getTime() / 1000) : undefined
-      const chats = await adapter.getChats({ before, limit })
+      const chats = await adapter.getChats({ after, before, limit })
       const filtered = chats
         .map(c => filterChatForApp(c, app))
         .filter((c): c is NonNullable<typeof c> => c !== null)
-      const nextCursor = filtered.length > 0 ? filtered[filtered.length - 1].lastMessageAt.toISOString() : null
-      res.json({ data: filtered, nextCursor })
+      res.json({
+        data: filtered,
+        cursors: {
+          next: filtered.length > 0 ? filtered[filtered.length - 1].lastMessageAt.toISOString() : null,
+          previous: filtered.length > 0 ? filtered[0].lastMessageAt.toISOString() : null,
+        },
+      })
     } catch (err) {
       res.status(500).json({ error: String(err) })
     }
@@ -40,12 +47,12 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
     try {
       const chatId = req.query.chatId as string | undefined
       const limit = Number(req.query.limit ?? 20)
-      const sinceStr = req.query.since as string | undefined
+      const afterStr = req.query.after as string | undefined
       const beforeStr = req.query.before as string | undefined
-      const since = sinceStr ? new Date(sinceStr) : undefined
+      const after = afterStr ? new Date(afterStr) : undefined
       const before = beforeStr ? new Date(beforeStr) : undefined
 
-      const query = scopeQuery(app, { chatId, limit, since, before })
+      const query = scopeQuery(app, { chatId, limit, after, before })
       if (query === null) {
         res.status(403).json({ error: 'chat_id is outside this app\'s scope' })
         return
@@ -55,8 +62,13 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
       const filtered = messages
         .map(m => filterMessageForApp(m, app))
         .filter((m): m is NonNullable<typeof m> => m !== null)
-      const nextCursor = filtered.length > 0 ? filtered[filtered.length - 1].timestamp.toISOString() : null
-      res.json({ data: filtered, nextCursor })
+      res.json({
+        data: filtered,
+        cursors: {
+          next: filtered.length > 0 ? filtered[filtered.length - 1].timestamp.toISOString() : null,
+          previous: filtered.length > 0 ? filtered[0].timestamp.toISOString() : null,
+        },
+      })
     } catch (err) {
       res.status(500).json({ error: String(err) })
     }
@@ -74,13 +86,20 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
       const type = _req.query.type as string | undefined
       const sender = _req.query.sender as string | undefined
       const source = _req.query.source as 'chat' | 'story' | undefined
+      const afterStr = _req.query.after as string | undefined
       const beforeStr = _req.query.before as string | undefined
+      const after = afterStr ? Math.floor(new Date(afterStr).getTime() / 1000) : undefined
       const before = beforeStr ? Math.floor(new Date(beforeStr).getTime() / 1000) : undefined
       const limit = Number(_req.query.limit ?? 20)
-      const media = store.getMedia({ type, sender, source, before, limit })
+      const media = store.getMedia({ type, sender, source, after, before, limit })
       const filtered = media.filter(m => filterMessageForApp(m, app) !== null)
-      const nextCursor = filtered.length > 0 ? filtered[filtered.length - 1].timestamp.toISOString() : null
-      res.json({ data: filtered, nextCursor })
+      res.json({
+        data: filtered,
+        cursors: {
+          next: filtered.length > 0 ? filtered[filtered.length - 1].timestamp.toISOString() : null,
+          previous: filtered.length > 0 ? filtered[0].timestamp.toISOString() : null,
+        },
+      })
     } catch (err) {
       res.status(500).json({ error: String(err) })
     }
