@@ -47,9 +47,7 @@ export class SQLiteStore {
         unread_count INTEGER DEFAULT 0
       );
 
-      CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, timestamp);
-      CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(timestamp);
-      CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type);
+      CREATE INDEX IF NOT EXISTS idx_messages_chat_ts ON messages(chat_id, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_messages_media ON messages(timestamp DESC) WHERE type != 'text';
       CREATE INDEX IF NOT EXISTS idx_chats_last_msg ON chats(last_message_at DESC);
 
@@ -84,10 +82,8 @@ export class SQLiteStore {
         created_at INTEGER
       );
 
-      CREATE INDEX IF NOT EXISTS idx_apps_api_key ON apps(api_key);
-      CREATE INDEX IF NOT EXISTS idx_apps_active ON apps(active);
-      CREATE INDEX IF NOT EXISTS idx_deliveries_app ON webhook_deliveries(app_id, created_at);
-      CREATE INDEX IF NOT EXISTS idx_deliveries_created ON webhook_deliveries(created_at);
+      CREATE INDEX IF NOT EXISTS idx_deliveries_app_ts ON webhook_deliveries(app_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_deliveries_status_ts ON webhook_deliveries(status, created_at);
     `)
   }
 
