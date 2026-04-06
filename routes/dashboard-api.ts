@@ -3,6 +3,7 @@ import type { WAAdapter } from '../core/adapter'
 import type { SQLiteStore } from '../adapters/baileys/store'
 import type { AppRegistry, RegisterAppInput } from '../apps/registry'
 import type { DashboardAuth } from '../middleware/dashboard-auth'
+import { resolveCanonicalJid } from '../core/jid'
 
 export function createDashboardApiRouter(
   adapter: WAAdapter,
@@ -161,7 +162,8 @@ export function createDashboardApiRouter(
 
   router.get('/api/messages', async (req, res) => {
     try {
-      const chatId = req.query.chatId as string | undefined
+      const rawChatId = req.query.chatId as string | undefined
+      const chatId = rawChatId ? resolveCanonicalJid(rawChatId) : undefined
       const limit = Number(req.query.limit ?? 20)
       const afterStr = req.query.after as string | undefined
       const beforeStr = req.query.before as string | undefined

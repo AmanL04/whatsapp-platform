@@ -2,6 +2,7 @@ import { Router } from 'express'
 import type { WAAdapter } from '../core/adapter'
 import type { SQLiteStore } from '../adapters/baileys/store'
 import { checkPermission, scopeQuery, filterMessageForApp, filterChatForApp } from '../apps/permissions'
+import { resolveCanonicalJid } from '../core/jid'
 
 export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router {
   const router = Router()
@@ -45,7 +46,8 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
     }
 
     try {
-      const chatId = req.query.chatId as string | undefined
+      const rawChatId = req.query.chatId as string | undefined
+      const chatId = rawChatId ? resolveCanonicalJid(rawChatId) : undefined
       const limit = Number(req.query.limit ?? 20)
       const afterStr = req.query.after as string | undefined
       const beforeStr = req.query.before as string | undefined
