@@ -11,6 +11,23 @@ interface Chat { id: string; name: string; isGroup: boolean; lastMessageAt: stri
 interface Message { id: string; chatId: string; senderName: string; content: string; type: string; mimeType?: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string }
 interface AppRecord { id: string; name: string; description: string; webhookGlobalUrl: string; webhookSecret: string; webhookEvents: { name: string; url?: string }[]; apiKey: string; permissions: string[]; scopeChatTypes: string[]; scopeSpecificChats: string[]; active: boolean; createdAt: string }
 interface Delivery { id: string; app_id: string; event: string; payload: string; status: string; attempts: number; last_attempt_at: number; response_status: number; created_at: number }
+interface Stats { messages: number; chats: number; media: number; apps: number; deliveries: number }
+
+// ─── Theme ───────────────────────────────────────────────────────────────────
+
+function useTheme() {
+  const [dark, setDark] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  })
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark)
+    localStorage.setItem('theme', dark ? 'dark' : 'light')
+  }, [dark])
+
+  return { dark, toggle: () => setDark(d => !d) }
+}
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
@@ -33,22 +50,74 @@ function useFetch<T>(url: string) {
   return { data, loading, refetch }
 }
 
+// ─── Shared Components ───────────────────────────────────────────────────────
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)] ${className}`}>{children}</div>
+}
+
+function Badge({ children, variant = 'default' }: { children: React.ReactNode; variant?: 'default' | 'accent' | 'secondary' | 'success' | 'error' }) {
+  const colors = {
+    default: 'bg-[var(--bg-inset)] text-[var(--text-secondary)]',
+    accent: 'bg-[var(--accent-soft)] text-[var(--accent-text)]',
+    secondary: 'bg-[var(--secondary-soft)] text-[var(--secondary-text)]',
+    success: 'bg-[var(--success-soft)] text-green-700 dark:text-green-400',
+    error: 'bg-[var(--error-soft)] text-red-700 dark:text-red-400',
+  }
+  return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[variant]}`}>{children}</span>
+}
+
+function Btn({ children, variant = 'primary', className = '', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' }) {
+  const styles = {
+    primary: 'bg-[var(--accent)] text-[var(--text-inverse)] hover:bg-[var(--accent-hover)] font-semibold shadow-[var(--shadow-sm)]',
+    secondary: 'bg-[var(--bg-inset)] text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border)]',
+    ghost: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]',
+  }
+  return <button className={`px-4 py-2 rounded-[var(--radius-md)] text-sm transition-all ${styles[variant]} disabled:opacity-50 ${className}`} {...props}>{children}</button>
+}
+
+function Input({ className = '', ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+  return <input className={`w-full px-4 py-2.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] text-sm focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)] transition-all ${className}`} {...props} />
+}
+
+function ChipSelect({ options, selected, onToggle, color = 'accent' }: { options: string[]; selected: string[]; onToggle: (v: string) => void; color?: 'accent' | 'secondary' }) {
+  const active = color === 'accent'
+    ? 'bg-[var(--accent-soft)] text-[var(--accent-text)] border-[var(--accent)]'
+    : 'bg-[var(--secondary-soft)] text-[var(--secondary-text)] border-[var(--secondary)]'
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map(o => (
+        <button key={o} onClick={() => onToggle(o)}
+          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${selected.includes(o) ? active : 'border-[var(--border)] text-[var(--text-tertiary)] hover:border-[var(--text-secondary)]'}`}>{o}</button>
+      ))}
+    </div>
+  )
+}
+
+function PageHeader({ title, children }: { title: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between mb-6">
+      <h2 className="text-xl font-bold text-[var(--text-primary)]">{title}</h2>
+      <div className="flex items-center gap-2">{children}</div>
+    </div>
+  )
+}
+
 // ─── Login Screen ────────────────────────────────────────────────────────────
 
 function LoginScreen({ onLogin }: { onLogin: () => void }) {
+  const { dark, toggle } = useTheme()
   const [step, setStep] = useState<'send' | 'verify'>('send')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
 
   const sendOtp = async () => {
-    setSending(true)
-    setError('')
+    setSending(true); setError('')
     try {
       const res = await fetch(`${AUTH}/send-otp`, { method: 'POST', credentials: 'include' })
       const data = await res.json()
-      if (res.ok) setStep('verify')
-      else setError(data.error)
+      if (res.ok) setStep('verify'); else setError(data.error)
     } catch { setError('Failed to connect to server') }
     setSending(false)
   }
@@ -56,43 +125,43 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   const verifyOtp = async () => {
     setError('')
     try {
-      const res = await fetch(`${AUTH}/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-        credentials: 'include',
-      })
+      const res = await fetch(`${AUTH}/verify-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }), credentials: 'include' })
       const data = await res.json()
-      if (res.ok) onLogin()
-      else setError(data.error)
+      if (res.ok) onLogin(); else setError(data.error)
     } catch { setError('Failed to verify') }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-8 shadow-lg w-80">
-        <h1 className="text-xl font-bold text-green-600 mb-2">WA Companion</h1>
-        <p className="text-sm text-gray-500 mb-6">Login via WhatsApp OTP</p>
+    <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center p-4">
+      <button onClick={toggle} className="fixed top-4 right-4 p-2 rounded-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-secondary)]">
+        {dark ? '\u2600\ufe0f' : '\ud83c\udf19'}
+      </button>
+      <Card className="p-8 w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 rounded-[var(--radius-xl)] bg-[var(--accent-soft)] flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl font-bold text-[var(--accent)]">WA</span>
+          </div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">WA Companion</h1>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">Login via WhatsApp OTP</p>
+        </div>
 
         {step === 'send' ? (
-          <button onClick={sendOtp} disabled={sending}
-            className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">
+          <Btn onClick={sendOtp} disabled={sending} className="w-full py-3">
             {sending ? 'Sending...' : 'Send OTP to WhatsApp'}
-          </button>
+          </Btn>
         ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-gray-500">Enter the 6-digit code sent to your WhatsApp</p>
-            <input value={code} onChange={e => setCode(e.target.value)} placeholder="123456" maxLength={6}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-center text-lg tracking-widest bg-transparent"
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--text-secondary)] text-center">Enter the 6-digit code sent to your WhatsApp</p>
+            <Input value={code} onChange={e => setCode(e.target.value)} placeholder="000000" maxLength={6}
+              className="text-center text-2xl tracking-[0.5em] font-mono"
               onKeyDown={e => e.key === 'Enter' && verifyOtp()} autoFocus />
-            <button onClick={verifyOtp}
-              className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700">Verify</button>
+            <Btn onClick={verifyOtp} className="w-full py-3">Verify</Btn>
             <button onClick={() => { setStep('send'); setCode(''); setError('') }}
-              className="w-full text-sm text-gray-400 hover:text-gray-600">Resend code</button>
+              className="w-full text-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">Resend code</button>
           </div>
         )}
-        {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
-      </div>
+        {error && <p className="mt-4 text-sm text-center" style={{ color: 'var(--error)' }}>{error}</p>}
+      </Card>
     </div>
   )
 }
@@ -105,38 +174,47 @@ function MessagesTab() {
   const { data: messages, loading: msgsLoading, refetch: refetchMsgs } = useFetch<Message[]>(
     selectedChat ? `${API}/messages?chatId=${selectedChat}&limit=100` : `${API}/messages?limit=100`,
   )
-
   const refresh = () => { refetchChats(); refetchMsgs() }
 
   return (
-    <div className="flex h-[calc(100vh-60px)]">
-      <div className="w-72 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
-        <div className="flex items-center justify-between p-3">
-          <h3 className="font-semibold text-sm text-gray-500 uppercase">Chats</h3>
-          <button onClick={refresh} className="text-xs text-gray-400 hover:text-gray-600">Refresh</button>
+    <div className="flex h-[calc(100vh-120px)]">
+      {/* Chat sidebar */}
+      <div className="w-80 border-r border-[var(--border)] overflow-y-auto bg-[var(--bg-surface)]">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+          <span className="text-xs font-semibold text-[var(--text-tertiary)] uppercase tracking-wider">Chats</span>
+          <Btn variant="ghost" onClick={refresh} className="px-2 py-1 text-xs">Refresh</Btn>
         </div>
-        {chatsLoading ? <p className="p-3 text-gray-400">Loading...</p> : (chats ?? []).map(chat => (
+        {chatsLoading ? <p className="p-4 text-[var(--text-tertiary)]">Loading...</p> : (chats ?? []).map(chat => (
           <button key={chat.id} onClick={() => setSelectedChat(chat.id)}
-            className={`w-full text-left p-3 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 ${selectedChat === chat.id ? 'bg-green-50 dark:bg-green-900/20' : ''}`}>
-            <div className="font-medium text-sm truncate">{chat.name || chat.id}</div>
-            <div className="text-xs text-gray-400">{chat.isGroup ? 'Group' : 'DM'}
-              {chat.unreadCount > 0 && <span className="ml-2 bg-green-500 text-white px-1.5 rounded-full">{chat.unreadCount}</span>}
+            className={`w-full text-left px-4 py-3 border-b border-[var(--border-light)] transition-all ${selectedChat === chat.id ? 'bg-[var(--accent-soft)]' : 'hover:bg-[var(--bg-surface-hover)]'}`}>
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-sm text-[var(--text-primary)] truncate">{chat.name || chat.id}</span>
+              <Badge variant={chat.isGroup ? 'secondary' : 'default'}>{chat.isGroup ? 'Group' : 'DM'}</Badge>
             </div>
           </button>
         ))}
       </div>
-      <div className="flex-1 overflow-y-auto p-4">
-        {msgsLoading ? <p className="text-gray-400">Loading messages...</p>
-          : (messages ?? []).length === 0 ? <p className="text-gray-400 text-center mt-20">No messages yet.</p>
-          : <div className="space-y-2 flex flex-col-reverse">
+
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto p-6 bg-[var(--bg-base)]">
+        {msgsLoading ? <p className="text-[var(--text-tertiary)]">Loading messages...</p>
+          : (messages ?? []).length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-[var(--text-tertiary)] text-lg">Select a chat to view messages</p>
+            </div>
+          ) : (
+            <div className="space-y-3 flex flex-col-reverse max-w-2xl mx-auto">
               {(messages ?? []).map(msg => (
-                <div key={msg.id} className={`max-w-lg p-3 rounded-lg text-sm ${msg.isFromMe ? 'ml-auto bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-gray-800'}`}>
-                  {!msg.isFromMe && <div className="font-semibold text-xs text-green-600 dark:text-green-400 mb-1">{msg.senderName}</div>}
-                  <div>{msg.content || `[${msg.type}]`}</div>
-                  <div className="text-xs text-gray-400 mt-1">{new Date(msg.timestamp).toLocaleTimeString()}</div>
+                <div key={msg.id} className={`max-w-md ${msg.isFromMe ? 'ml-auto' : ''}`}>
+                  <Card className={`p-4 ${msg.isFromMe ? 'bg-[var(--accent-soft)] border-transparent' : ''}`}>
+                    {!msg.isFromMe && <div className="font-semibold text-xs mb-1" style={{ color: 'var(--secondary)' }}>{msg.senderName}</div>}
+                    <div className="text-sm text-[var(--text-primary)]">{msg.content || `[${msg.type}]`}</div>
+                    <div className="text-xs text-[var(--text-tertiary)] mt-2">{new Date(msg.timestamp).toLocaleTimeString()}</div>
+                  </Card>
                 </div>
               ))}
             </div>
+          )
         }
       </div>
     </div>
@@ -161,56 +239,53 @@ function MediaTab() {
   const { data: media, loading, refetch } = useFetch<Message[]>(`${API}/media?${params}`)
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Recent Media</h2>
-        <button onClick={refetch} className="text-sm text-gray-400 hover:text-gray-600">Refresh</button>
-      </div>
+    <div className="p-6 max-w-6xl mx-auto">
+      <PageHeader title="Media">
+        <Btn variant="ghost" onClick={refetch}>Refresh</Btn>
+      </PageHeader>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-500">Source:</span>
-          {['', 'chat', 'story'].map(s => (
-            <button key={s} onClick={() => setSourceFilter(s)}
-              className={`px-2 py-1 rounded text-xs ${sourceFilter === s ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
-              {s || 'All'}
-            </button>
-          ))}
-        </div>
+      <Card className="p-4 mb-6">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-[var(--text-tertiary)]">Source</span>
+            {['', 'chat', 'story'].map(s => (
+              <button key={s} onClick={() => setSourceFilter(s)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${sourceFilter === s ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'bg-[var(--bg-inset)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)]'}`}>
+                {s || 'All'}
+              </button>
+            ))}
+          </div>
 
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-500">Type:</span>
-          <button onClick={() => setTypeFilter('')}
-            className={`px-2 py-1 rounded text-xs ${!typeFilter ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>All</button>
-          {MEDIA_TYPES.map(t => (
-            <button key={t} onClick={() => setTypeFilter(t)}
-              className={`px-2 py-1 rounded text-xs ${typeFilter === t ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{t}</button>
-          ))}
-        </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-[var(--text-tertiary)]">Type</span>
+            <button onClick={() => setTypeFilter('')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${!typeFilter ? 'bg-[var(--secondary)] text-[var(--text-inverse)]' : 'bg-[var(--bg-inset)] text-[var(--text-secondary)]'}`}>All</button>
+            {MEDIA_TYPES.map(t => (
+              <button key={t} onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${typeFilter === t ? 'bg-[var(--secondary)] text-[var(--text-inverse)]' : 'bg-[var(--bg-inset)] text-[var(--text-secondary)]'}`}>{t}</button>
+            ))}
+          </div>
 
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-500">Sender:</span>
-          <input value={senderFilter} onChange={e => setSenderFilter(e.target.value)} placeholder="Search sender..."
-            className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs bg-transparent w-36" />
+          <Input value={senderFilter} onChange={e => setSenderFilter(e.target.value)} placeholder="Search sender..." className="w-48 !py-1.5 text-xs" />
         </div>
-      </div>
+      </Card>
 
-      {loading ? <p className="text-gray-400">Loading media...</p>
-        : (media ?? []).length === 0 ? <p className="text-gray-400">No media found.</p>
+      {loading ? <p className="text-[var(--text-tertiary)]">Loading media...</p>
+        : (media ?? []).length === 0 ? <p className="text-[var(--text-tertiary)]">No media found.</p>
         : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {(media ?? []).map((m) => (
-              <div key={m.id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-medium text-gray-500 uppercase">{m.type}</div>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${m.chatId === 'status@broadcast' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+            {(media ?? []).map(m => (
+              <Card key={m.id} className="p-4 hover:shadow-[var(--shadow-md)] transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge variant="secondary">{m.type}</Badge>
+                  <Badge variant={m.chatId === 'status@broadcast' ? 'accent' : 'default'}>
                     {m.chatId === 'status@broadcast' ? 'Story' : 'Chat'}
-                  </span>
+                  </Badge>
                 </div>
-                <div className="text-sm mt-1 truncate">{m.content || m.mimeType || m.type}</div>
-                <div className="text-xs text-gray-400 mt-1">{m.senderName} &middot; {new Date(m.timestamp).toLocaleDateString()}</div>
-              </div>
+                <div className="text-sm text-[var(--text-primary)] truncate mt-1">{m.content || m.mimeType || m.type}</div>
+                <div className="text-xs text-[var(--text-tertiary)] mt-2">{m.senderName} &middot; {new Date(m.timestamp).toLocaleDateString()}</div>
+              </Card>
             ))}
           </div>
         )
@@ -231,55 +306,26 @@ function AppEditForm({ app, onSave, onCancel }: { app: AppRecord; onSave: () => 
   const [scopeTypes, setScopeTypes] = useState<string[]>(app.scopeChatTypes)
   const [saving, setSaving] = useState(false)
 
-  const toggleItem = (arr: string[], item: string, setter: (v: string[]) => void) => {
+  const toggle = (arr: string[], item: string, setter: (v: string[]) => void) => {
     setter(arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item])
   }
 
   const save = async () => {
     setSaving(true)
-    await fetch(`${API}/apps/${app.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        webhookGlobalUrl: webhookUrl,
-        webhookEvents: events.map(e => ({ name: e })),
-        permissions,
-        scopeChatTypes: scopeTypes,
-      }),
-    })
-    setSaving(false)
-    onSave()
+    await fetch(`${API}/apps/${app.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ webhookGlobalUrl: webhookUrl, webhookEvents: events.map(e => ({ name: e })), permissions, scopeChatTypes: scopeTypes }) })
+    setSaving(false); onSave()
   }
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-3">
-      <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="Webhook URL"
-        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-sm" />
-      <div>
-        <p className="text-xs font-medium text-gray-500 mb-1">Events</p>
-        <div className="flex flex-wrap gap-2">{EVENT_OPTIONS.map(e => (
-          <button key={e} onClick={() => toggleItem(events, e, setEvents)}
-            className={`px-2 py-1 rounded text-xs ${events.includes(e) ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{e}</button>
-        ))}</div>
-      </div>
-      <div>
-        <p className="text-xs font-medium text-gray-500 mb-1">Permissions</p>
-        <div className="flex flex-wrap gap-2">{PERMISSION_OPTIONS.map(p => (
-          <button key={p} onClick={() => toggleItem(permissions, p, setPermissions)}
-            className={`px-2 py-1 rounded text-xs ${permissions.includes(p) ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{p}</button>
-        ))}</div>
-      </div>
-      <div>
-        <p className="text-xs font-medium text-gray-500 mb-1">Chat Scope</p>
-        <div className="flex gap-2">{['dm', 'group'].map(t => (
-          <button key={t} onClick={() => toggleItem(scopeTypes, t, setScopeTypes)}
-            className={`px-2 py-1 rounded text-xs ${scopeTypes.includes(t) ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{t}</button>
-        ))}</div>
-      </div>
+    <div className="mt-4 pt-4 border-t border-[var(--border)] space-y-4">
+      <Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="Webhook URL" />
+      <div><p className="text-xs font-medium text-[var(--text-tertiary)] mb-2">Events</p><ChipSelect options={EVENT_OPTIONS} selected={events} onToggle={v => toggle(events, v, setEvents)} /></div>
+      <div><p className="text-xs font-medium text-[var(--text-tertiary)] mb-2">Permissions</p><ChipSelect options={PERMISSION_OPTIONS} selected={permissions} onToggle={v => toggle(permissions, v, setPermissions)} color="secondary" /></div>
+      <div><p className="text-xs font-medium text-[var(--text-tertiary)] mb-2">Scope</p><ChipSelect options={['dm', 'group']} selected={scopeTypes} onToggle={v => toggle(scopeTypes, v, setScopeTypes)} /></div>
       <div className="flex gap-2">
-        <button onClick={save} disabled={saving} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
-        <button onClick={onCancel} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 rounded-lg text-xs font-medium">Cancel</button>
+        <Btn onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</Btn>
+        <Btn variant="secondary" onClick={onCancel}>Cancel</Btn>
       </div>
     </div>
   )
@@ -291,7 +337,6 @@ function AppsTab() {
   const [created, setCreated] = useState<AppRecord | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  // Form state
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [webhookUrl, setWebhookUrl] = useState('')
@@ -299,139 +344,85 @@ function AppsTab() {
   const [permissions, setPermissions] = useState<string[]>([])
   const [scopeTypes, setScopeTypes] = useState<string[]>(['dm', 'group'])
 
-  const toggleItem = (arr: string[], item: string, setter: (v: string[]) => void) => {
+  const toggle = (arr: string[], item: string, setter: (v: string[]) => void) => {
     setter(arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item])
   }
 
   const createApp = async () => {
     try {
-      const res = await fetch(`${API}/apps`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          name, description, webhookGlobalUrl: webhookUrl,
-          webhookEvents: events.map(e => ({ name: e })),
-          permissions, scopeChatTypes: scopeTypes, scopeSpecificChats: [],
-        }),
-      })
-      if (res.ok) {
-        const app = await res.json()
-        setCreated(app)
-        setShowForm(false)
-        setName(''); setDescription(''); setWebhookUrl(''); setEvents([]); setPermissions([])
-        refetch()
-      }
-    } catch (err) {
-      console.error('Failed to create app:', err)
-    }
+      const res = await fetch(`${API}/apps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ name, description, webhookGlobalUrl: webhookUrl || undefined, webhookEvents: events.length ? events.map(e => ({ name: e })) : undefined, permissions, scopeChatTypes: scopeTypes, scopeSpecificChats: [] }) })
+      if (res.ok) { const app = await res.json(); setCreated(app); setShowForm(false); setName(''); setDescription(''); setWebhookUrl(''); setEvents([]); setPermissions([]); refetch() }
+    } catch (err) { console.error('Failed to create app:', err) }
   }
 
-  const deactivate = async (id: string) => {
-    await fetch(`${API}/apps/${id}`, { method: 'DELETE', credentials: 'include' })
-    refetch()
-  }
+  const deactivate = async (id: string) => { await fetch(`${API}/apps/${id}`, { method: 'DELETE', credentials: 'include' }); refetch() }
 
-  if (loading) return <p className="p-6 text-gray-400">Loading apps...</p>
+  if (loading) return <p className="p-6 text-[var(--text-tertiary)]">Loading apps...</p>
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Registered Apps</h2>
-        <div className="flex gap-2">
-          <button onClick={refetch} className="text-sm text-gray-400 hover:text-gray-600">Refresh</button>
-          <button onClick={() => setShowForm(!showForm)} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
-            {showForm ? 'Cancel' : '+ Register App'}
-          </button>
-        </div>
-      </div>
+      <PageHeader title="Registered Apps">
+        <Btn variant="ghost" onClick={refetch}>Refresh</Btn>
+        <Btn onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : '+ Register App'}</Btn>
+      </PageHeader>
 
-      {/* Created app secrets (shown once) */}
+      {/* Created secrets banner */}
       {created && (
-        <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded-lg">
-          <p className="font-semibold text-sm mb-2">App created: {created.name}</p>
-          <p className="text-xs text-gray-500 mb-2">Save these — they won't be shown again:</p>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded flex-1 break-all">{created.apiKey}</span>
-              <button onClick={() => navigator.clipboard.writeText(created.apiKey)} className="text-xs text-green-600 hover:underline">Copy Key</button>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded flex-1 break-all">{created.webhookSecret}</span>
-              <button onClick={() => navigator.clipboard.writeText(created.webhookSecret)} className="text-xs text-green-600 hover:underline">Copy Secret</button>
-            </div>
+        <Card className="mb-6 p-5 border-[var(--accent)] bg-[var(--accent-soft)]">
+          <p className="font-semibold text-sm text-[var(--text-primary)] mb-1">App created: {created.name}</p>
+          <p className="text-xs text-[var(--text-secondary)] mb-3">Save these — they won't be shown again:</p>
+          <div className="space-y-2">
+            {[{ label: 'API Key', value: created.apiKey }, { label: 'Webhook Secret', value: created.webhookSecret }].map(({ label, value }) => (
+              <div key={label} className="flex items-center gap-2">
+                <span className="text-xs text-[var(--text-tertiary)] w-24">{label}</span>
+                <code className="text-xs font-mono bg-[var(--bg-surface)] px-3 py-1.5 rounded-[var(--radius-sm)] flex-1 break-all border border-[var(--border)]">{value}</code>
+                <Btn variant="ghost" onClick={() => navigator.clipboard.writeText(value)} className="text-xs px-2">Copy</Btn>
+              </div>
+            ))}
           </div>
-          <button onClick={() => setCreated(null)} className="mt-2 text-xs text-gray-400 hover:text-gray-600">Dismiss</button>
-        </div>
+          <button onClick={() => setCreated(null)} className="mt-3 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]">Dismiss</button>
+        </Card>
       )}
 
       {/* Registration form */}
       {showForm && (
-        <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-3">
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="App name" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-sm" />
-          <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-sm" />
-          <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="Webhook URL (optional — leave empty for API-only app)" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-sm" />
-
-          <div>
-            <p className="text-xs font-medium text-gray-500 mb-1">Events (optional — select if using webhooks)</p>
-            <div className="flex flex-wrap gap-2">{EVENT_OPTIONS.map(e => (
-              <button key={e} onClick={() => toggleItem(events, e, setEvents)}
-                className={`px-2 py-1 rounded text-xs ${events.includes(e) ? 'bg-green-100 dark:bg-green-900/30 text-green-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{e}</button>
-            ))}</div>
-          </div>
-
-          <div>
-            <p className="text-xs font-medium text-gray-500 mb-1">Permissions</p>
-            <div className="flex flex-wrap gap-2">{PERMISSION_OPTIONS.map(p => (
-              <button key={p} onClick={() => toggleItem(permissions, p, setPermissions)}
-                className={`px-2 py-1 rounded text-xs ${permissions.includes(p) ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{p}</button>
-            ))}</div>
-          </div>
-
-          <div>
-            <p className="text-xs font-medium text-gray-500 mb-1">Chat Scope</p>
-            <div className="flex gap-2">
-              {['dm', 'group'].map(t => (
-                <button key={t} onClick={() => toggleItem(scopeTypes, t, setScopeTypes)}
-                  className={`px-2 py-1 rounded text-xs ${scopeTypes.includes(t) ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{t}</button>
-              ))}
-            </div>
-          </div>
-
-          <button onClick={createApp} disabled={!name || (events.length > 0 && !webhookUrl)}
-            className="w-full py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">Register App</button>
-        </div>
+        <Card className="mb-6 p-5 space-y-4">
+          <Input value={name} onChange={e => setName(e.target.value)} placeholder="App name" />
+          <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" />
+          <Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="Webhook URL (optional — leave empty for API-only)" />
+          <div><p className="text-xs font-medium text-[var(--text-tertiary)] mb-2">Events (optional)</p><ChipSelect options={EVENT_OPTIONS} selected={events} onToggle={v => toggle(events, v, setEvents)} /></div>
+          <div><p className="text-xs font-medium text-[var(--text-tertiary)] mb-2">Permissions</p><ChipSelect options={PERMISSION_OPTIONS} selected={permissions} onToggle={v => toggle(permissions, v, setPermissions)} color="secondary" /></div>
+          <div><p className="text-xs font-medium text-[var(--text-tertiary)] mb-2">Scope</p><ChipSelect options={['dm', 'group']} selected={scopeTypes} onToggle={v => toggle(scopeTypes, v, setScopeTypes)} /></div>
+          <Btn onClick={createApp} disabled={!name || (events.length > 0 && !webhookUrl)} className="w-full py-3">Register App</Btn>
+        </Card>
       )}
 
       {/* App list */}
-      {(apps ?? []).length === 0 ? <p className="text-gray-400">No apps registered yet.</p> : (
-        <div className="space-y-3">{(apps ?? []).map(app => (
-          <div key={app.id} className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
+      {(apps ?? []).length === 0 ? <p className="text-[var(--text-tertiary)]">No apps registered yet.</p> : (
+        <div className="space-y-4">{(apps ?? []).map(app => (
+          <Card key={app.id} className="p-5">
+            <div className="flex items-start justify-between">
               <div>
-                <div className="font-medium text-sm">{app.name}</div>
-                <div className="text-xs text-gray-400">{app.description}</div>
+                <div className="font-semibold text-[var(--text-primary)]">{app.name}</div>
+                {app.description && <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{app.description}</div>}
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setEditingId(editingId === app.id ? null : app.id)} className="text-xs text-blue-500 hover:underline">
+                <Btn variant="ghost" onClick={() => setEditingId(editingId === app.id ? null : app.id)} className="text-xs px-2">
                   {editingId === app.id ? 'Close' : 'Edit'}
-                </button>
-                <button onClick={() => deactivate(app.id)} className="text-xs text-red-500 hover:underline">Deactivate</button>
+                </Btn>
+                <Btn variant="ghost" onClick={() => deactivate(app.id)} className="text-xs px-2" style={{ color: 'var(--error)' }}>Deactivate</Btn>
               </div>
             </div>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {app.webhookEvents.map((e: { name: string; url?: string }) => (
-                <span key={e.name} className="px-1.5 py-0.5 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded text-xs">{e.name}</span>
-              ))}
-              {app.permissions.map(p => (
-                <span key={p} className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 rounded text-xs">{p}</span>
-              ))}
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {app.webhookEvents.map((e: { name: string; url?: string }) => <Badge key={e.name} variant="accent">{e.name}</Badge>)}
+              {app.permissions.map(p => <Badge key={p} variant="secondary">{p}</Badge>)}
             </div>
-            <div className="mt-1 text-xs text-gray-400">
-              Key: {app.apiKey} &middot; Scope: {app.scopeChatTypes.join(', ')}
+            <div className="mt-2 text-xs text-[var(--text-tertiary)]">
+              Key: <code className="font-mono">{app.apiKey}</code> &middot; Scope: {app.scopeChatTypes.join(', ')}
             </div>
             {editingId === app.id && <AppEditForm app={app} onSave={() => { setEditingId(null); refetch() }} onCancel={() => setEditingId(null)} />}
-          </div>
+          </Card>
         ))}</div>
       )}
     </div>
@@ -445,65 +436,83 @@ function LogsTab() {
   const { data: apps } = useFetch<AppRecord[]>(`${API}/apps`)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  // Auto-refresh every 30s
-  useEffect(() => {
-    const interval = setInterval(refetch, 30000)
-    return () => clearInterval(interval)
-  }, [refetch])
+  useEffect(() => { const i = setInterval(refetch, 30000); return () => clearInterval(i) }, [refetch])
 
   const appName = useCallback((id: string) => apps?.find(a => a.id === id)?.name ?? id, [apps])
+  const formatPayload = (raw: string) => { try { return JSON.stringify(JSON.parse(raw), null, 2) } catch { return raw } }
+  const statusBadge = (s: string) => s === 'delivered' ? 'success' as const : s === 'failed' ? 'error' as const : 'accent' as const
 
-  const formatPayload = (raw: string) => {
-    try { return JSON.stringify(JSON.parse(raw), null, 2) }
-    catch { return raw }
-  }
-
-  if (loading) return <p className="p-6 text-gray-400">Loading delivery logs...</p>
-
-  const statusColor = (s: string) => s === 'delivered' ? 'text-green-600' : s === 'failed' ? 'text-red-500' : 'text-yellow-500'
+  if (loading) return <p className="p-6 text-[var(--text-tertiary)]">Loading delivery logs...</p>
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">Webhook Delivery Logs</h2>
-        <button onClick={refetch} className="text-sm text-gray-400 hover:text-gray-600">Refresh</button>
-      </div>
-      {(deliveries ?? []).length === 0 ? <p className="text-gray-400">No deliveries yet.</p> : (
-        <div className="overflow-x-auto">
+    <div className="p-6 max-w-6xl mx-auto">
+      <PageHeader title="Webhook Delivery Logs">
+        <Btn variant="ghost" onClick={refetch}>Refresh</Btn>
+      </PageHeader>
+
+      {(deliveries ?? []).length === 0 ? <p className="text-[var(--text-tertiary)]">No deliveries yet.</p> : (
+        <Card className="overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
-                <th className="pb-2 pr-4">Time</th>
-                <th className="pb-2 pr-4">App</th>
-                <th className="pb-2 pr-4">Event</th>
-                <th className="pb-2 pr-4">Status</th>
-                <th className="pb-2 pr-4">Attempts</th>
-                <th className="pb-2">Response</th>
+              <tr className="text-left text-xs text-[var(--text-tertiary)] bg-[var(--bg-inset)]">
+                <th className="px-4 py-3">Time</th>
+                <th className="px-4 py-3">App</th>
+                <th className="px-4 py-3">Event</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Attempts</th>
+                <th className="px-4 py-3">Response</th>
               </tr>
             </thead>
             <tbody>
               {(deliveries ?? []).map(d => (<>
-                <tr key={d.id} className="border-b border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                <tr key={d.id} className="border-t border-[var(--border-light)] cursor-pointer hover:bg-[var(--bg-surface-hover)] transition-colors"
                   onClick={() => setExpandedId(expandedId === d.id ? null : d.id)}>
-                  <td className="py-2 pr-4 text-xs text-gray-400">{new Date(d.created_at * 1000).toLocaleString()}</td>
-                  <td className="py-2 pr-4 text-xs">{appName(d.app_id)}</td>
-                  <td className="py-2 pr-4 text-xs font-mono">{d.event}</td>
-                  <td className={`py-2 pr-4 text-xs font-medium ${statusColor(d.status)}`}>{d.status}</td>
-                  <td className="py-2 pr-4 text-xs">{d.attempts}</td>
-                  <td className="py-2 text-xs">{d.response_status || '-'}</td>
+                  <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">{new Date(d.created_at * 1000).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-[var(--text-primary)]">{appName(d.app_id)}</td>
+                  <td className="px-4 py-3"><code className="text-xs font-mono text-[var(--text-secondary)]">{d.event}</code></td>
+                  <td className="px-4 py-3"><Badge variant={statusBadge(d.status)}>{d.status}</Badge></td>
+                  <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">{d.attempts}</td>
+                  <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">{d.response_status || '-'}</td>
                 </tr>
                 {expandedId === d.id && d.payload && (
-                  <tr key={`${d.id}-payload`} className="border-b border-gray-100 dark:border-gray-800">
-                    <td colSpan={6} className="p-3">
-                      <pre className="text-xs bg-gray-100 dark:bg-gray-900 rounded-lg p-3 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap">{formatPayload(d.payload)}</pre>
+                  <tr key={`${d.id}-payload`} className="border-t border-[var(--border-light)]">
+                    <td colSpan={6} className="p-4">
+                      <pre className="text-xs font-mono bg-[var(--bg-inset)] rounded-[var(--radius-md)] p-4 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap text-[var(--text-secondary)]">{formatPayload(d.payload)}</pre>
                     </td>
                   </tr>
                 )}
               </>))}
             </tbody>
           </table>
-        </div>
+        </Card>
       )}
+    </div>
+  )
+}
+
+// ─── Stats Bar ───────────────────────────────────────────────────────────────
+
+function StatsBar() {
+  const [tick, setTick] = useState(0)
+  const { data: stats } = useFetch<Stats>(`${API}/stats?_t=${tick}`)
+  useEffect(() => { const i = setInterval(() => setTick(t => t + 1), 5000); return () => clearInterval(i) }, [])
+
+  if (!stats) return null
+  const items = [
+    { label: 'Messages', value: stats.messages },
+    { label: 'Chats', value: stats.chats },
+    { label: 'Media', value: stats.media },
+    { label: 'Apps', value: stats.apps },
+    { label: 'Deliveries', value: stats.deliveries },
+  ]
+  return (
+    <div className="flex items-center gap-6 px-6 py-2 bg-[var(--bg-surface)] border-b border-[var(--border)]">
+      {items.map(i => (
+        <div key={i.label} className="flex items-center gap-1.5">
+          <span className="text-sm font-bold text-[var(--text-primary)]">{i.value.toLocaleString()}</span>
+          <span className="text-xs text-[var(--text-tertiary)]">{i.label}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -517,36 +526,11 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'logs', label: 'Logs' },
 ]
 
-interface Stats { messages: number; chats: number; media: number; apps: number; deliveries: number }
-
-function StatsBar() {
-  const [tick, setTick] = useState(0)
-  const { data: stats } = useFetch<Stats>(`${API}/stats?_t=${tick}`)
-
-  // Auto-refresh every 5s
-  useEffect(() => {
-    const interval = setInterval(() => setTick(t => t + 1), 5000)
-    return () => clearInterval(interval)
-  }, [])
-
-  if (!stats) return null
-  const s = stats
-  return (
-    <div className="flex items-center gap-4 px-4 py-1.5 bg-gray-100 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 text-xs text-gray-500">
-      <span>{s.messages.toLocaleString()} messages</span>
-      <span>{s.chats.toLocaleString()} chats</span>
-      <span>{s.media.toLocaleString()} media</span>
-      <span>{s.apps} apps</span>
-      <span>{s.deliveries.toLocaleString()} deliveries</span>
-    </div>
-  )
-}
-
 export default function App() {
+  const { dark, toggle } = useTheme()
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [tab, setTab] = useState<Tab>('messages')
 
-  // Check session on mount
   useEffect(() => {
     fetch(`${API}/auth/check`, { credentials: 'include' })
       .then(r => r.json())
@@ -554,22 +538,36 @@ export default function App() {
       .catch(() => setAuthenticated(false))
   }, [])
 
-  if (authenticated === null) return <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center"><p className="text-gray-400">Loading...</p></div>
+  if (authenticated === null) return <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center"><p className="text-[var(--text-tertiary)]">Loading...</p></div>
   if (!authenticated) return <LoginScreen onLogin={() => setAuthenticated(true)} />
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      <nav className="flex items-center gap-1 px-4 h-[60px] bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <h1 className="text-lg font-bold text-green-600 mr-6">WA Companion</h1>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-3 py-1.5 rounded text-sm font-medium ${tab === t.id ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-            {t.label}
-          </button>
-        ))}
+    <div className="min-h-screen bg-[var(--bg-base)]">
+      {/* Nav */}
+      <nav className="flex items-center justify-between px-6 h-16 bg-[var(--bg-surface)] border-b border-[var(--border)]">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--accent)] flex items-center justify-center">
+              <span className="text-xs font-bold text-[var(--text-inverse)]">WA</span>
+            </div>
+            <span className="text-lg font-bold text-[var(--text-primary)]">Companion</span>
+          </div>
+          <div className="flex items-center bg-[var(--bg-inset)] rounded-[var(--radius-md)] p-1">
+            {TABS.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={`px-4 py-1.5 rounded-[var(--radius-sm)] text-sm font-medium transition-all ${tab === t.id ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-[var(--shadow-sm)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button onClick={toggle} className="p-2 rounded-[var(--radius-sm)] hover:bg-[var(--bg-surface-hover)] text-[var(--text-secondary)] transition-colors">
+          {dark ? '\u2600\ufe0f' : '\ud83c\udf19'}
+        </button>
       </nav>
       <StatsBar />
 
+      {/* Content */}
       {tab === 'messages' && <MessagesTab />}
       {tab === 'media' && <MediaTab />}
       {tab === 'apps' && <AppsTab />}
