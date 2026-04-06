@@ -8,7 +8,8 @@ const AUTH = '/dashboard/auth'
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Chat { id: string; name: string; isGroup: boolean; lastMessageAt: string; unreadCount: number }
-interface Message { id: string; chatId: string; senderName: string; content: string; type: string; mimeType?: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string }
+interface Reaction { messageId: string; senderId: string; senderName: string; emoji: string; timestamp: string }
+interface Message { id: string; chatId: string; senderName: string; content: string; type: string; mimeType?: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string; reactions?: Reaction[] }
 interface AppRecord { id: string; name: string; description: string; webhookGlobalUrl: string; webhookSecret: string; webhookEvents: { name: string; url?: string }[]; apiKey: string; permissions: string[]; scopeChatTypes: string[]; scopeSpecificChats: string[]; active: boolean; createdAt: string }
 interface Delivery { id: string; app_id: string; event: string; payload: string; status: string; attempts: number; last_attempt_at: number; response_status: number; created_at: number }
 interface Stats { messages: number; chats: number; media: number; apps: number; deliveries: number }
@@ -222,6 +223,15 @@ function MessagesTab() {
                     <div className="text-sm font-medium">{m.content || `[${m.type}]`}</div>
                     <div className={`text-xs mt-2 font-medium ${m.isFromMe ? 'opacity-70' : 'text-[var(--text-tertiary)]'}`}>{new Date(m.timestamp).toLocaleTimeString()}</div>
                   </div>
+                  {m.reactions && m.reactions.length > 0 && (
+                    <div className={`flex gap-1 mt-1 ${m.isFromMe ? 'justify-end' : ''}`}>
+                      {Object.entries(m.reactions.reduce<Record<string, string[]>>((acc, r) => { (acc[r.emoji] ??= []).push(r.senderName || r.senderId); return acc }, {})).map(([emoji, names]) => (
+                        <span key={emoji} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border-2 border-[var(--border)] bg-[var(--bg-surface)] text-xs font-bold cursor-default" title={names.join(', ')}>
+                          {emoji}{names.length > 1 && <span className="text-[var(--text-tertiary)]">{names.length}</span>}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

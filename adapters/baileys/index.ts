@@ -9,7 +9,7 @@ import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import type { WAAdapter } from '../../core/adapter'
 import type { Chat, Message, MessageQuery } from '../../core/types'
-import { normalizeJid, isLid, isStatusBroadcast, resolveCanonicalJid, loadIdentityCache, updateIdentityCache } from '../../core/jid'
+import { normalizeJid, isLid, isStatusBroadcast, resolveCanonicalJid, loadIdentityCache, updateIdentityCache, identityCacheSize } from '../../core/jid'
 import { SQLiteStore } from './store'
 
 export class BaileysAdapter implements WAAdapter {
@@ -66,10 +66,17 @@ export class BaileysAdapter implements WAAdapter {
       if (connection === 'open') {
         console.log('[baileys] connected')
         this.connectedHandlers.forEach(h => h())
-        // Only sync group identities once per server lifetime (not on reconnects)
+        // Sync group identities once per server lifetime. Skip entirely if
+        // identities table already has data (from a previous run) — new members
+        // are discovered live via lid-mapping.update and pushName on messages.
         if (!this.groupSyncDone) {
           this.groupSyncDone = true
-          this.syncGroupMemberNames()
+          const cached = identityCacheSize()
+          if (cached === 0) {
+            this.syncGroupMemberNames()
+          } else {
+            console.log(`[baileys] skipping group sync — ${cached} identities already cached`)
+          }
         }
       }
       if (connection === 'close') {
@@ -217,6 +224,36 @@ export class BaileysAdapter implements WAAdapter {
         })
       }
     })
+
+    // Reaction events — add/remove emoji reactions on messages
+    this.sock.ev.on('messages.reaction', (reactions) => {
+      for (const { key, reaction } of reactions) {
+        const messageId = key.id
+        if (!messageId) continue
+
+        const chatId = resolveCanonicalJid(normalizeJid(key.remoteJid ?? ''))
+        const isGroup = chatId.endsWith('@g.us')
+        const rawSenderId = normalizeJid(reaction.key?.participant ?? key.participant ?? '')
+        const senderId = resolveCanonicalJid(rawSenderId)
+        const senderName = this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || ''
+        const emoji = reaction.text ?? ''
+
+        if (emoji) {
+          this.store.upsertReaction(messageId, senderId, emoji)
+        } else {
+          this.store.deleteReaction(messageId, senderId)
+        }
+
+        this.dispatchEvent?.('message.reaction', {
+          messageId,
+          chatId,
+          senderId,
+          senderName,
+          emoji: emoji || null,
+          action: emoji ? 'add' : 'remove',
+        }, chatId, isGroup)
+      }
+    })
   }
 
   disconnect(): Promise<void> {
@@ -256,7 +293,6 @@ export class BaileysAdapter implements WAAdapter {
   }
 
   onMessage(handler: (msg: Message) => void) { this.messageHandlers.push(handler) }
-  onMedia(_handler: (media: Message) => void) { /* Media events dispatched via onMessage — type != 'text' */ }
   onConnected(handler: () => void) { this.connectedHandlers.push(handler) }
   onDisconnected(handler: (reason: string) => void) { this.disconnectedHandlers.push(handler) }
 

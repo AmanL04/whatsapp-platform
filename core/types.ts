@@ -11,7 +11,15 @@ export interface Message {
   isGroup: boolean
   groupName?: string
   replyTo?: string
-  reactions?: { emoji: string; senderId: string }[]
+  reactions?: Reaction[]
+}
+
+export interface Reaction {
+  messageId: string
+  senderId: string
+  senderName: string
+  emoji: string
+  timestamp: Date
 }
 
 export interface Chat {
@@ -20,7 +28,6 @@ export interface Chat {
   isGroup: boolean
   lastMessageAt: Date
   unreadCount: number
-  participants?: string[]
 }
 
 export interface MessageQuery {

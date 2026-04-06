@@ -23,7 +23,6 @@ export interface WAAdapter {
 
   // Events
   onMessage(handler: (msg: Message) => void): void
-  onMedia(handler: (media: Message) => void): void
   onConnected(handler: () => void): void
   onDisconnected(handler: (reason: string) => void): void
 }

@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as crypto from 'crypto'
-import type { Chat, Message, MessageQuery } from '../../core/types'
+import type { Chat, Message, MessageQuery, Reaction } from '../../core/types'
 
 export class SQLiteStore {
   private db: Database.Database
@@ -56,10 +56,6 @@ export class SQLiteStore {
       CREATE INDEX IF NOT EXISTS idx_messages_media ON messages(timestamp DESC) WHERE type != 'text';
       CREATE INDEX IF NOT EXISTS idx_chats_last_msg ON chats(last_message_at DESC);
 
-      DROP TABLE IF EXISTS tasks;
-      DROP TABLE IF EXISTS summaries;
-      DROP TABLE IF EXISTS media;
-
       CREATE TABLE IF NOT EXISTS apps (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -99,6 +95,16 @@ export class SQLiteStore {
       );
 
       CREATE INDEX IF NOT EXISTS idx_identities_canonical ON identities(canonical_jid);
+
+      CREATE TABLE IF NOT EXISTS reactions (
+        message_id TEXT NOT NULL,
+        sender_id TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        created_at INTEGER,
+        PRIMARY KEY (message_id, sender_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions(message_id);
     `)
   }
 
@@ -195,7 +201,8 @@ export class SQLiteStore {
     sql += ' ORDER BY m.timestamp DESC LIMIT ?'
     params.push(Math.min(query.limit ?? 20, 100))
 
-    return this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
+    const messages = this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
+    return this.attachReactions(messages)
   }
 
   searchMessages(text: string, opts: { after?: number; before?: number; limit?: number } = {}): Message[] {
@@ -220,7 +227,8 @@ export class SQLiteStore {
     sql += ' ORDER BY m.timestamp DESC LIMIT ?'
     params.push(Math.min(opts.limit ?? 20, 100))
 
-    return this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
+    const messages = this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
+    return this.attachReactions(messages)
   }
 
   getRawJson(messageId: string): string | null {
@@ -263,15 +271,6 @@ export class SQLiteStore {
         updated_at = excluded.updated_at
     `).run(canonicalJid, aliasJid, finalName, finalSource, Math.floor(Date.now() / 1000))
 
-    // Also update canonical's own entry if it has a lower-priority name
-    if (canonicalJid !== aliasJid && finalName) {
-      this.db.prepare(`
-        UPDATE identities SET
-          display_name = CASE WHEN ? > COALESCE(NULLIF(name_source, ''), 'phone') THEN ? ELSE display_name END,
-          name_source = CASE WHEN ? > COALESCE(NULLIF(name_source, ''), 'phone') THEN ? ELSE name_source END
-        WHERE alias_jid = ?
-      `)  // This is too complex for SQLite string comparison — handle in code instead
-    }
   }
 
   /** Update display_name for ALL entries sharing a canonical_jid */
@@ -311,6 +310,61 @@ export class SQLiteStore {
     const rows = this.db.prepare('SELECT alias_jid, canonical_jid FROM identities').all() as { alias_jid: string; canonical_jid: string }[]
     for (const r of rows) map.set(r.alias_jid, r.canonical_jid)
     return map
+  }
+
+  // ─── Reactions ──────────────────────────────────────────────────────────────
+
+  upsertReaction(messageId: string, senderId: string, emoji: string) {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO reactions (message_id, sender_id, emoji, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(messageId, senderId, emoji, Math.floor(Date.now() / 1000))
+  }
+
+  deleteReaction(messageId: string, senderId: string) {
+    this.db.prepare('DELETE FROM reactions WHERE message_id = ? AND sender_id = ?').run(messageId, senderId)
+  }
+
+  getReactionsForMessages(messageIds: string[]): Map<string, Reaction[]> {
+    const map = new Map<string, Reaction[]>()
+    if (messageIds.length === 0) return map
+
+    const placeholders = messageIds.map(() => '?').join(', ')
+    const rows = this.db.prepare(`
+      SELECT r.message_id, r.sender_id, r.emoji, r.created_at,
+        COALESCE(ident.display_name, '') AS resolved_sender_name
+      FROM reactions r
+      LEFT JOIN identities ident ON r.sender_id = ident.alias_jid
+      WHERE r.message_id IN (${placeholders})
+      ORDER BY r.created_at ASC
+    `).all(...messageIds) as any[]
+
+    for (const row of rows) {
+      const reaction: Reaction = {
+        messageId: row.message_id,
+        senderId: row.sender_id,
+        senderName: row.resolved_sender_name || '',
+        emoji: row.emoji,
+        timestamp: new Date(row.created_at * 1000),
+      }
+      const list = map.get(row.message_id) ?? []
+      list.push(reaction)
+      map.set(row.message_id, list)
+    }
+    return map
+  }
+
+  private attachReactions(messages: Message[]): Message[] {
+    if (messages.length === 0) return messages
+    const ids = messages.map(m => m.id)
+    const reactionsMap = this.getReactionsForMessages(ids)
+    for (const msg of messages) {
+      const reactions = reactionsMap.get(msg.id)
+      if (reactions && reactions.length > 0) {
+        msg.reactions = reactions
+      }
+    }
+    return messages
   }
 
   // ─── Chats ─────────────────────────────────────────────────────────────────
@@ -365,7 +419,7 @@ export class SQLiteStore {
       params.push(filters.type)
     }
     if (filters.sender) {
-      sql += ' AND COALESCE(c_sender.name, m.sender_name) LIKE ?'
+      sql += ' AND COALESCE(ident.display_name, m.sender_name) LIKE ?'
       params.push(`%${filters.sender}%`)
     }
     if (filters.source === 'story') {
@@ -385,7 +439,8 @@ export class SQLiteStore {
     sql += ' ORDER BY m.timestamp DESC LIMIT ?'
     params.push(Math.min(filters.limit ?? 20, 100))
 
-    return this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
+    const messages = this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
+    return this.attachReactions(messages)
   }
 
   // ─── Encryption helpers ─────────────────────────────────────────────────────
@@ -552,24 +607,6 @@ export class SQLiteStore {
 
   // ─── Row mappers ───────────────────────────────────────────────────────────
 
-  private rowToMessage(row: any): Message {
-    return {
-      id: row.id,
-      chatId: row.chat_id,
-      senderId: row.sender_id,
-      senderName: row.sender_name,
-      content: row.content,
-      type: row.type,
-      mimeType: row.mime_type ?? undefined,
-      timestamp: new Date(row.timestamp * 1000),
-      isFromMe: !!row.is_from_me,
-      isGroup: !!row.is_group,
-      groupName: row.group_name ?? undefined,
-      replyTo: row.reply_to ?? undefined,
-    }
-  }
-
-  /** Like rowToMessage but prefers latest names from chats table via JOIN */
   private rowToMessageWithResolvedNames(row: any): Message {
     // Don't resolve sender name from chats table for status@broadcast — it's not a person
     const senderName = row.sender_id === 'status@broadcast'
