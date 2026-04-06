@@ -145,8 +145,10 @@ export class SQLiteStore {
     )
   }
 
+  private static readonly MSG_COLS = 'm.id, m.chat_id, m.sender_id, m.sender_name, m.content, m.type, m.mime_type, m.timestamp, m.is_from_me, m.is_group, m.group_name, m.reply_to'
+
   getMessages(query: MessageQuery): Message[] {
-    let sql = `SELECT m.*,
+    let sql = `SELECT ${SQLiteStore.MSG_COLS},
       COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
       COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
       FROM messages m
@@ -176,7 +178,7 @@ export class SQLiteStore {
 
   searchMessages(text: string): Message[] {
     return this.db.prepare(
-      `SELECT m.*,
+      `SELECT ${SQLiteStore.MSG_COLS},
         COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
         COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
       FROM messages m
@@ -219,7 +221,7 @@ export class SQLiteStore {
   // ─── Media (queries messages table where type != 'text') ────────────────────
 
   getMedia(filters: { type?: string; sender?: string; source?: 'chat' | 'story'; limit?: number } = {}) {
-    let sql = `SELECT m.*,
+    let sql = `SELECT ${SQLiteStore.MSG_COLS},
       COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
       COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
       FROM messages m
