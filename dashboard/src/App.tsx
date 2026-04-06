@@ -52,8 +52,16 @@ function useFetch<T>(url: string) {
 
 // ─── Shared Components ───────────────────────────────────────────────────────
 
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)] ${className}`}>{children}</div>
+function Card({ children, className = '', glass = false }: { children: React.ReactNode; className?: string; glass?: boolean }) {
+  const base = glass
+    ? 'rounded-[var(--radius-lg)] border border-[var(--glass-border)] shadow-[var(--shadow-sm)] relative noise'
+    : 'rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]'
+  const glassStyle = glass ? { background: 'var(--glass-bg)', backdropFilter: `blur(var(--glass-blur))`, WebkitBackdropFilter: `blur(var(--glass-blur))` } : undefined
+  return <div className={`${base} hover:shadow-[var(--shadow-md)] transition-all duration-200 ${className}`} style={glassStyle}>{children}</div>
+}
+
+function GlassCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <Card glass className={className}>{children}</Card>
 }
 
 function Badge({ children, variant = 'default' }: { children: React.ReactNode; variant?: 'default' | 'accent' | 'secondary' | 'success' | 'error' }) {
@@ -69,11 +77,18 @@ function Badge({ children, variant = 'default' }: { children: React.ReactNode; v
 
 function Btn({ children, variant = 'primary', className = '', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' }) {
   const styles = {
-    primary: 'bg-[var(--accent)] text-[var(--text-inverse)] hover:bg-[var(--accent-hover)] font-semibold shadow-[var(--shadow-sm)]',
-    secondary: 'bg-[var(--bg-inset)] text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border)]',
+    primary: 'bg-[var(--accent)] text-[var(--text-inverse)] hover:bg-[var(--accent-hover)] font-semibold shadow-[var(--shadow-sm)] hover:shadow-[0_0_20px_var(--accent-glow)] active:scale-[0.98]',
+    secondary: 'bg-[var(--bg-inset)] text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border)] active:scale-[0.98]',
     ghost: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]',
   }
-  return <button className={`px-4 py-2 rounded-[var(--radius-md)] text-sm transition-all ${styles[variant]} disabled:opacity-50 ${className}`} {...props}>{children}</button>
+  return <button className={`px-4 py-2 rounded-[var(--radius-md)] text-sm transition-all duration-200 ${styles[variant]} disabled:opacity-50 ${className}`} {...props}>{children}</button>
+}
+
+function StatusDot({ connected }: { connected: boolean }) {
+  return (
+    <span className={`inline-block w-2 h-2 rounded-full ${connected ? 'bg-[var(--success)]' : 'bg-[var(--error)]'}`}
+      style={{ animation: connected ? 'glow-pulse 2s ease-in-out infinite' : 'glow-pulse-error 2s ease-in-out infinite' }} />
+  )
 }
 
 function Input({ className = '', ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
@@ -132,14 +147,18 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center p-4">
-      <button onClick={toggle} className="fixed top-4 right-4 p-2 rounded-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-secondary)]">
+    <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background gradient orbs */}
+      <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] rounded-full opacity-20 blur-[100px]" style={{ background: 'var(--gradient-accent)' }} />
+      <div className="absolute bottom-[-20%] left-[-10%] w-[400px] h-[400px] rounded-full opacity-15 blur-[100px]" style={{ background: 'var(--gradient-secondary)' }} />
+
+      <button onClick={toggle} className="fixed top-4 right-4 p-2 rounded-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-secondary)] z-10">
         {dark ? '\u2600\ufe0f' : '\ud83c\udf19'}
       </button>
-      <Card className="p-8 w-full max-w-sm">
+      <GlassCard className="p-8 w-full max-w-sm animate-in relative z-10">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-[var(--radius-xl)] bg-[var(--accent-soft)] flex items-center justify-center mx-auto mb-4">
-            <span className="text-2xl font-bold text-[var(--accent)]">WA</span>
+          <div className="w-16 h-16 rounded-[var(--radius-xl)] flex items-center justify-center mx-auto mb-4 gradient-border" style={{ background: 'var(--gradient-accent)' }}>
+            <span className="text-2xl font-bold text-white">WA</span>
           </div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">WA Companion</h1>
           <p className="text-sm text-[var(--text-secondary)] mt-1">Login via WhatsApp OTP</p>
@@ -161,7 +180,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
           </div>
         )}
         {error && <p className="mt-4 text-sm text-center" style={{ color: 'var(--error)' }}>{error}</p>}
-      </Card>
+      </GlassCard>
     </div>
   )
 }
@@ -203,10 +222,11 @@ function MessagesTab() {
               <p className="text-[var(--text-tertiary)] text-lg">Select a chat to view messages</p>
             </div>
           ) : (
-            <div className="space-y-3 flex flex-col-reverse max-w-2xl mx-auto">
+            <div className="space-y-3 flex flex-col-reverse max-w-2xl mx-auto animate-fade">
               {(messages ?? []).map(msg => (
                 <div key={msg.id} className={`max-w-md ${msg.isFromMe ? 'ml-auto' : ''}`}>
-                  <Card className={`p-4 ${msg.isFromMe ? 'bg-[var(--accent-soft)] border-transparent' : ''}`}>
+                  <Card glass={msg.isFromMe} className={`p-4 ${msg.isFromMe ? 'border-transparent' : ''}`}
+                    style={msg.isFromMe ? { background: 'var(--accent-soft)' } : undefined}>
                     {!msg.isFromMe && <div className="font-semibold text-xs mb-1" style={{ color: 'var(--secondary)' }}>{msg.senderName}</div>}
                     <div className="text-sm text-[var(--text-primary)]">{msg.content || `[${msg.type}]`}</div>
                     <div className="text-xs text-[var(--text-tertiary)] mt-2">{new Date(msg.timestamp).toLocaleTimeString()}</div>
@@ -274,9 +294,9 @@ function MediaTab() {
       {loading ? <p className="text-[var(--text-tertiary)]">Loading media...</p>
         : (media ?? []).length === 0 ? <p className="text-[var(--text-tertiary)]">No media found.</p>
         : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 animate-fade">
             {(media ?? []).map(m => (
-              <Card key={m.id} className="p-4 hover:shadow-[var(--shadow-md)] transition-shadow">
+              <Card key={m.id} glass className="p-4 hover:scale-[1.02] transition-all duration-200 cursor-default">
                 <div className="flex items-center justify-between mb-2">
                   <Badge variant="secondary">{m.type}</Badge>
                   <Badge variant={m.chatId === 'status@broadcast' ? 'accent' : 'default'}>
@@ -451,7 +471,7 @@ function LogsTab() {
       </PageHeader>
 
       {(deliveries ?? []).length === 0 ? <p className="text-[var(--text-tertiary)]">No deliveries yet.</p> : (
-        <Card className="overflow-hidden">
+        <Card glass className="overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-[var(--text-tertiary)] bg-[var(--bg-inset)]">
@@ -499,17 +519,17 @@ function StatsBar() {
 
   if (!stats) return null
   const items = [
-    { label: 'Messages', value: stats.messages },
-    { label: 'Chats', value: stats.chats },
-    { label: 'Media', value: stats.media },
-    { label: 'Apps', value: stats.apps },
-    { label: 'Deliveries', value: stats.deliveries },
+    { label: 'Messages', value: stats.messages, accent: false },
+    { label: 'Chats', value: stats.chats, accent: false },
+    { label: 'Media', value: stats.media, accent: false },
+    { label: 'Apps', value: stats.apps, accent: true },
+    { label: 'Deliveries', value: stats.deliveries, accent: true },
   ]
   return (
-    <div className="flex items-center gap-6 px-6 py-2 bg-[var(--bg-surface)] border-b border-[var(--border)]">
+    <div className="flex items-center gap-1 px-6 py-2.5 border-b border-[var(--border)]" style={{ background: 'var(--glass-bg)', backdropFilter: `blur(var(--glass-blur))` }}>
       {items.map(i => (
-        <div key={i.label} className="flex items-center gap-1.5">
-          <span className="text-sm font-bold text-[var(--text-primary)]">{i.value.toLocaleString()}</span>
+        <div key={i.label} className={`flex items-center gap-2 px-3 py-1 rounded-full ${i.accent ? 'bg-[var(--accent-soft)]' : ''}`}>
+          <span className={`text-sm font-bold ${i.accent ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{i.value.toLocaleString()}</span>
           <span className="text-xs text-[var(--text-tertiary)]">{i.label}</span>
         </div>
       ))}
@@ -544,13 +564,14 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[var(--bg-base)]">
       {/* Nav */}
-      <nav className="flex items-center justify-between px-6 h-16 bg-[var(--bg-surface)] border-b border-[var(--border)]">
+      <nav className="flex items-center justify-between px-6 h-16 border-b border-[var(--border)]" style={{ background: 'var(--glass-bg)', backdropFilter: `blur(var(--glass-blur))` }}>
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--accent)] flex items-center justify-center">
-              <span className="text-xs font-bold text-[var(--text-inverse)]">WA</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-[var(--radius-sm)] flex items-center justify-center" style={{ background: 'var(--gradient-accent)' }}>
+              <span className="text-xs font-bold text-white">WA</span>
             </div>
             <span className="text-lg font-bold text-[var(--text-primary)]">Companion</span>
+            <StatusDot connected={true} />
           </div>
           <div className="flex items-center bg-[var(--bg-inset)] rounded-[var(--radius-md)] p-1">
             {TABS.map(t => (
