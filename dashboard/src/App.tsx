@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 type Tab = 'overview' | 'messages' | 'media' | 'apps' | 'logs'
 
@@ -50,6 +50,18 @@ function useFetch<T>(url: string) {
   }, [url, fetchKey])
   const refetch = useCallback(() => setFetchKey(k => k + 1), [])
   return { data, loading, refetch }
+}
+
+// ─── Text helpers ───────────────────────────────────────────────────────────
+
+const URL_RE = /(https?:\/\/[^\s<]+)/g
+
+function Linkify({ text, className }: { text: string; className?: string }) {
+  const parts = text.split(URL_RE)
+  return <span className={className}>{parts.map((p, i) => URL_RE.test(p)
+    ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:opacity-80">{p}</a>
+    : p
+  )}</span>
 }
 
 // ─── Primitives ──────────────────────────────────────────────────────────────
@@ -193,15 +205,20 @@ function MessagesTab() {
   const [sel, setSel] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const filteredChats = (chats ?? []).filter(c => !search || (c.name || c.id).toLowerCase().includes(search.toLowerCase()))
-  const { data: msgs, loading: ml, refetch: rm } = useFetch<Message[]>(sel ? `${API}/messages?chatId=${sel}&limit=100` : `${API}/messages?limit=100`)
+  const { data: msgs, loading: ml, refetch: rm } = useFetch<Message[]>(sel ? `${API}/messages?chatId=${sel}&limit=100` : '')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const selectedChat = (chats ?? []).find(c => c.id === sel)
+
+  // Auto-scroll to bottom when messages load or chat changes
+  useEffect(() => { if (msgs?.length) messagesEndRef.current?.scrollIntoView() }, [msgs, sel])
 
   return (
     <div className="flex h-[calc(100vh-72px)]" style={{ background: 'var(--tab-messages)' }}>
-      <div className="w-80 border-r-2 border-[var(--border)] bg-[var(--bg-surface)] overflow-y-auto">
+      <div className="w-80 flex-shrink-0 border-r-2 border-[var(--border)] bg-[var(--bg-surface)] overflow-y-auto">
         <div className="p-3 flex items-center gap-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search chats..."
             className="flex-1 px-3 py-2 rounded-[var(--radius-md)] border-2 border-[var(--border)] bg-[var(--bg-surface)] text-sm font-medium placeholder-[var(--text-tertiary)] focus:outline-none focus:shadow-[var(--shadow-brutal-color)]" />
-          <RefreshBtn onClick={() => { rc(); rm() }} />
+          <RefreshBtn onClick={() => { rc(); if (sel) rm() }} />
         </div>
         {cl ? <div className="p-4 text-[var(--text-tertiary)] font-medium">Loading...</div> : filteredChats.map(c => (
           <button key={c.id} onClick={() => setSel(c.id)}
@@ -218,20 +235,32 @@ function MessagesTab() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-10 py-6">
-        {ml ? <div className="text-[var(--text-tertiary)] font-medium">Loading...</div>
-          : !(msgs ?? []).length ? (
+      <div className="flex-1 min-w-0 flex flex-col">
+        {sel && selectedChat && (
+          <div className="px-10 py-4 border-b-2 border-[var(--border)] bg-[var(--bg-surface)]">
+            <div className="font-black text-lg text-[var(--text-primary)]">{selectedChat.name || selectedChat.id}</div>
+            <div className="text-xs font-bold text-[var(--text-tertiary)]">{selectedChat.isGroup ? 'Group' : 'DM'}</div>
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto px-10 py-6">
+        {!sel ? (
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <div className="text-6xl">💬</div>
               <p className="text-2xl font-bold text-[var(--text-tertiary)]">Select a chat</p>
             </div>
+          ) : ml ? <div className="text-[var(--text-tertiary)] font-medium">Loading...</div>
+          : !(msgs ?? []).length ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4">
+              <div className="text-4xl">📭</div>
+              <p className="text-lg font-bold text-[var(--text-tertiary)]">No messages</p>
+            </div>
           ) : (
-            <div className="flex flex-col-reverse gap-2">
-              {(msgs ?? []).map(m => (
+            <div className="flex flex-col gap-2">
+              {[...(msgs ?? [])].reverse().map(m => (
                 <div key={m.id} className={`max-w-[60%] ${m.isFromMe ? 'ml-auto' : ''}`}>
                   <div className={`p-4 rounded-[var(--radius-lg)] border-2 border-[var(--border)] ${m.isFromMe ? 'bg-[var(--accent)] text-white shadow-[var(--shadow-brutal-sm)]' : 'bg-[var(--bg-surface)]'}`}>
                     {!m.isFromMe && <div className="font-black text-xs mb-1" style={{ color: 'var(--secondary)' }}>{m.senderName}</div>}
-                    <div className="text-sm font-medium">{m.content || `[${m.type}]`}</div>
+                    <div className="text-sm font-medium break-words">{m.content ? <Linkify text={m.content} /> : `[${m.type}]`}</div>
                     <div className={`text-xs mt-2 font-medium ${m.isFromMe ? 'opacity-70' : 'text-[var(--text-tertiary)]'}`}>{new Date(m.timestamp).toLocaleTimeString()}</div>
                   </div>
                   {m.reactions && m.reactions.length > 0 && (
@@ -245,9 +274,11 @@ function MessagesTab() {
                   )}
                 </div>
               ))}
+              <div ref={messagesEndRef} />
             </div>
           )
         }
+        </div>
       </div>
     </div>
   )

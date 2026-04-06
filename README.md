@@ -200,5 +200,14 @@ migrations/
 docs/
   identity-resolution.md    — WhatsApp JID/LID identity resolution design
   group-metadata-caching.md — group metadata caching plan
+todos/                      — planned feature specs
 dashboard/                  — Vite + React + Tailwind SPA
 ```
+
+## TODO
+
+Planned features with design docs:
+
+| Feature | Plan | Status |
+|---|---|---|
+| [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
