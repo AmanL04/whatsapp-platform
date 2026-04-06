@@ -47,6 +47,8 @@ export class SQLiteStore {
       CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, timestamp);
       CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages(timestamp);
       CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type);
+      CREATE INDEX IF NOT EXISTS idx_messages_media ON messages(timestamp DESC) WHERE type != 'text';
+      CREATE INDEX IF NOT EXISTS idx_chats_last_msg ON chats(last_message_at DESC);
 
       DROP TABLE IF EXISTS tasks;
       DROP TABLE IF EXISTS summaries;
