@@ -211,3 +211,4 @@ Planned features with design docs:
 | Feature | Plan | Status |
 |---|---|---|
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
+| [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
