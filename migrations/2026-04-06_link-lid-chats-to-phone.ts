@@ -12,7 +12,13 @@ import type Database from 'better-sqlite3'
  * exist linking them to phone JID chats, and creates jid_map entries.
  */
 export function up(db: Database.Database): void {
-  // Find LID chat entries that have names but no jid_map mapping to a phone JID
+  // Skip if jid_map was already dropped by build-identities migration
+  const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='jid_map'").get()
+  if (!tableExists) {
+    console.log('[migrations] link-lid-chats-to-phone: skipped (jid_map already dropped)')
+    return
+  }
+
   const lidChats = db.prepare(`
     SELECT c.id as lid, c.name
     FROM chats c

@@ -9,6 +9,13 @@ import type Database from 'better-sqlite3'
  * the jid_map table.
  */
 export function up(db: Database.Database): void {
+  // Skip if jid_map was already dropped by build-identities migration
+  const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='jid_map'").get()
+  if (!tableExists) {
+    console.log('[migrations] normalize-lid-chat-ids: skipped (jid_map already dropped)')
+    return
+  }
+
   const mappings = db.prepare(
     "SELECT lid, phone_jid FROM jid_map WHERE phone_jid != lid AND phone_jid LIKE '%@s.whatsapp.net'"
   ).all() as { lid: string; phone_jid: string }[]
