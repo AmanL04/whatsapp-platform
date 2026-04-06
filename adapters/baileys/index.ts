@@ -9,7 +9,7 @@ import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import type { WAAdapter } from '../../core/adapter'
 import type { Chat, Message, MessageQuery } from '../../core/types'
-import { normalizeJid, isLid, isStatusBroadcast, resolveCanonicalJid, loadIdentityCache, updateIdentityCache } from '../../core/jid'
+import { normalizeJid, isLid, isStatusBroadcast, resolveCanonicalJid, loadIdentityCache, updateIdentityCache, identityCacheSize } from '../../core/jid'
 import { SQLiteStore } from './store'
 
 export class BaileysAdapter implements WAAdapter {
@@ -66,10 +66,23 @@ export class BaileysAdapter implements WAAdapter {
       if (connection === 'open') {
         console.log('[baileys] connected')
         this.connectedHandlers.forEach(h => h())
-        // Only sync group identities once per server lifetime (not on reconnects)
-        if (!this.groupSyncDone) {
+        // If identities already cached from a previous run, skip group sync entirely.
+        // New members are discovered live via lid-mapping.update and pushName.
+        if (!this.groupSyncDone && identityCacheSize() > 0) {
           this.groupSyncDone = true
-          this.syncGroupMemberNames()
+          console.log(`[baileys] skipping group sync — ${identityCacheSize()} identities already cached`)
+        }
+        // Fallback: if history sync never fires (existing auth session, WhatsApp
+        // considers device already synced), trigger group sync after 30s so chats
+        // populated by contacts/chats events can still be synced.
+        if (!this.groupSyncDone) {
+          setTimeout(() => {
+            if (!this.groupSyncDone) {
+              this.groupSyncDone = true
+              console.log('[baileys] history sync did not fire — running group sync via fallback timer')
+              this.syncGroupMemberNames()
+            }
+          }, 30_000)
         }
       }
       if (connection === 'close') {
@@ -186,6 +199,11 @@ export class BaileysAdapter implements WAAdapter {
       // so Express can respond to health checks
       this.storeHistoryBatch(normalized, rawJsons).then(() => {
         this.dispatchHistoryBatch(normalized)
+        // Trigger group sync after first history batch — chats are now populated
+        if (!this.groupSyncDone) {
+          this.groupSyncDone = true
+          this.syncGroupMemberNames()
+        }
       })
     })
 
@@ -215,6 +233,36 @@ export class BaileysAdapter implements WAAdapter {
             this.dispatchEvent?.('media.received', msg, msg.chatId, msg.isGroup)
           }
         })
+      }
+    })
+
+    // Reaction events — add/remove emoji reactions on messages
+    this.sock.ev.on('messages.reaction', (reactions) => {
+      for (const { key, reaction } of reactions) {
+        const messageId = key.id
+        if (!messageId) continue
+
+        const chatId = resolveCanonicalJid(normalizeJid(key.remoteJid ?? ''))
+        const isGroup = chatId.endsWith('@g.us')
+        const rawSenderId = normalizeJid(reaction.key?.participant ?? key.participant ?? '')
+        const senderId = resolveCanonicalJid(rawSenderId)
+        const senderName = this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || ''
+        const emoji = reaction.text ?? ''
+
+        if (emoji) {
+          this.store.upsertReaction(messageId, senderId, emoji)
+        } else {
+          this.store.deleteReaction(messageId, senderId)
+        }
+
+        this.dispatchEvent?.('message.reaction', {
+          messageId,
+          chatId,
+          senderId,
+          senderName,
+          emoji: emoji || null,
+          action: emoji ? 'add' : 'remove',
+        }, chatId, isGroup)
       }
     })
   }
@@ -256,7 +304,6 @@ export class BaileysAdapter implements WAAdapter {
   }
 
   onMessage(handler: (msg: Message) => void) { this.messageHandlers.push(handler) }
-  onMedia(_handler: (media: Message) => void) { /* Media events dispatched via onMessage — type != 'text' */ }
   onConnected(handler: () => void) { this.connectedHandlers.push(handler) }
   onDisconnected(handler: (reason: string) => void) { this.disconnectedHandlers.push(handler) }
 
@@ -446,14 +493,20 @@ export class BaileysAdapter implements WAAdapter {
       ? (msg[`${type}Message`]?.mimetype ?? undefined)
       : undefined
 
-    const rawSenderId = normalizeJid(raw.key.participant ?? raw.participant ?? rawChatId)
+    // In DMs, participant is absent. For fromMe DMs, remoteJid is the RECIPIENT,
+    // not the sender — use our own JID to avoid attributing our pushName to the contact.
+    const rawSenderId = normalizeJid(
+      raw.key.participant ?? raw.participant ?? (raw.key.fromMe ? this.sock?.user?.id : rawChatId) ?? rawChatId
+    )
     const senderId = resolveCanonicalJid(rawSenderId)
     const senderName = raw.pushName || this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || ''
 
     // Discover LID→phone mappings from DM context
     if (isLid(rawChatId) && !isLid(chatId) && rawChatId !== chatId) {
-      // rawChatId was LID, resolved to phone — save the mapping
-      this.store.upsertIdentity(chatId, rawChatId, raw.pushName || '', raw.pushName ? 'pushName' : '')
+      // rawChatId was LID, resolved to phone — save the mapping.
+      // Only attribute pushName if NOT fromMe — pushName is the sender's name, not the contact's.
+      const contactName = raw.key.fromMe ? '' : (raw.pushName || '')
+      this.store.upsertIdentity(chatId, rawChatId, contactName, contactName ? 'pushName' : '')
       updateIdentityCache(rawChatId, chatId)
     }
 
