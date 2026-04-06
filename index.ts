@@ -46,15 +46,6 @@ if ((APP_ENV === 'prod' || APP_ENV === 'dev') && !DASHBOARD_ORIGIN) {
 async function main() {
   const startTime = Date.now()
 
-  // One-time DB wipe — set WIPE_DB=true in env, deploy, then remove the var
-  if (process.env.WIPE_DB === 'true') {
-    const dbPath = './data/whatsapp.db'
-    if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath)
-      console.log('[main] WIPE_DB=true — deleted whatsapp.db, starting fresh')
-    }
-  }
-
   // 1. Adapter
   const adapter = new BaileysAdapter('./data/auth', './data/whatsapp.db', process.env.DB_ENCRYPTION_SECRET)
   const store = adapter.getStore()
