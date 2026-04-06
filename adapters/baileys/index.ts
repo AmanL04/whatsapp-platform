@@ -9,7 +9,7 @@ import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import type { WAAdapter } from '../../core/adapter'
 import type { Chat, Message, MessageQuery } from '../../core/types'
-import { normalizeJid, isLid, isStatusBroadcast, resolveCanonicalJid, loadIdentityCache, updateIdentityCache } from '../../core/jid'
+import { normalizeJid, isLid, resolveCanonicalJid, loadIdentityCache, updateIdentityCache } from '../../core/jid'
 import { SQLiteStore } from './store'
 
 export class BaileysAdapter implements WAAdapter {
@@ -157,7 +157,7 @@ export class BaileysAdapter implements WAAdapter {
       }
     })
 
-    this.sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
+    this.sock.ev.on('group-participants.update', async ({ id }) => {
       // Refresh full metadata on member changes — the event only tells us who changed, not the full list
       if (!this.sock) return
       try {
