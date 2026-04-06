@@ -150,32 +150,44 @@ export class SQLiteStore {
   }
 
   getMessages(query: MessageQuery): Message[] {
-    let sql = 'SELECT * FROM messages WHERE 1=1'
+    let sql = `SELECT m.*,
+      COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
+      COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
+      FROM messages m
+      LEFT JOIN chats c_chat ON m.chat_id = c_chat.id
+      LEFT JOIN chats c_sender ON m.sender_id = c_sender.id
+      WHERE 1=1`
     const params: any[] = []
 
     if (query.chatId) {
-      sql += ' AND chat_id = ?'
+      sql += ' AND m.chat_id = ?'
       params.push(query.chatId)
     }
     if (query.since) {
-      sql += ' AND timestamp >= ?'
+      sql += ' AND m.timestamp >= ?'
       params.push(Math.floor(query.since.getTime() / 1000))
     }
     if (query.search) {
-      sql += ' AND content LIKE ?'
+      sql += ' AND m.content LIKE ?'
       params.push(`%${query.search}%`)
     }
 
-    sql += ' ORDER BY timestamp DESC LIMIT ?'
+    sql += ' ORDER BY m.timestamp DESC LIMIT ?'
     params.push(Math.min(query.limit ?? 20, 100))
 
-    return this.db.prepare(sql).all(...params).map(this.rowToMessage)
+    return this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
   }
 
   searchMessages(text: string): Message[] {
     return this.db.prepare(
-      'SELECT * FROM messages WHERE content LIKE ? ORDER BY timestamp DESC LIMIT 100'
-    ).all(`%${text}%`).map(this.rowToMessage)
+      `SELECT m.*,
+        COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
+        COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
+      FROM messages m
+      LEFT JOIN chats c_chat ON m.chat_id = c_chat.id
+      LEFT JOIN chats c_sender ON m.sender_id = c_sender.id
+      WHERE m.content LIKE ? ORDER BY m.timestamp DESC LIMIT 100`
+    ).all(`%${text}%`).map(this.rowToMessageWithResolvedNames)
   }
 
   getRawJson(messageId: string): string | null {
@@ -202,27 +214,33 @@ export class SQLiteStore {
   // ─── Media (queries messages table where type != 'text') ────────────────────
 
   getMedia(filters: { type?: string; sender?: string; source?: 'chat' | 'story'; limit?: number } = {}) {
-    let sql = "SELECT * FROM messages WHERE type != 'text'"
+    let sql = `SELECT m.*,
+      COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
+      COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
+      FROM messages m
+      LEFT JOIN chats c_chat ON m.chat_id = c_chat.id
+      LEFT JOIN chats c_sender ON m.sender_id = c_sender.id
+      WHERE m.type != 'text'`
     const params: (string | number)[] = []
 
     if (filters.type) {
-      sql += ' AND type = ?'
+      sql += ' AND m.type = ?'
       params.push(filters.type)
     }
     if (filters.sender) {
-      sql += ' AND sender_name LIKE ?'
+      sql += ' AND COALESCE(c_sender.name, m.sender_name) LIKE ?'
       params.push(`%${filters.sender}%`)
     }
     if (filters.source === 'story') {
-      sql += " AND chat_id = 'status@broadcast'"
+      sql += " AND m.chat_id = 'status@broadcast'"
     } else if (filters.source === 'chat') {
-      sql += " AND chat_id != 'status@broadcast'"
+      sql += " AND m.chat_id != 'status@broadcast'"
     }
 
-    sql += ' ORDER BY timestamp DESC LIMIT ?'
+    sql += ' ORDER BY m.timestamp DESC LIMIT ?'
     params.push(Math.min(filters.limit ?? 20, 100))
 
-    return this.db.prepare(sql).all(...params).map(this.rowToMessage)
+    return this.db.prepare(sql).all(...params).map(this.rowToMessageWithResolvedNames)
   }
 
   // ─── Encryption helpers ─────────────────────────────────────────────────────
@@ -402,6 +420,24 @@ export class SQLiteStore {
       isFromMe: !!row.is_from_me,
       isGroup: !!row.is_group,
       groupName: row.group_name ?? undefined,
+      replyTo: row.reply_to ?? undefined,
+    }
+  }
+
+  /** Like rowToMessage but prefers latest names from chats table via JOIN */
+  private rowToMessageWithResolvedNames(row: any): Message {
+    return {
+      id: row.id,
+      chatId: row.chat_id,
+      senderId: row.sender_id,
+      senderName: row.resolved_sender_name || row.sender_name || '',
+      content: row.content,
+      type: row.type,
+      mimeType: row.mime_type ?? undefined,
+      timestamp: new Date(row.timestamp * 1000),
+      isFromMe: !!row.is_from_me,
+      isGroup: !!row.is_group,
+      groupName: row.is_group ? (row.resolved_group_name || row.group_name || undefined) : undefined,
       replyTo: row.reply_to ?? undefined,
     }
   }
