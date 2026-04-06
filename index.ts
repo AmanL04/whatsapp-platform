@@ -15,6 +15,7 @@ import { DashboardAuth } from './middleware/dashboard-auth'
 import { createApiRouter } from './routes/api'
 import { createDashboardApiRouter } from './routes/dashboard-api'
 import { cleanOldDeliveries } from './apps/cleanup'
+import { runMigrations } from './migrations/runner'
 import type { EventName } from './core/events'
 import cron from 'node-cron'
 
@@ -48,6 +49,9 @@ async function main() {
   // 1. Adapter
   const adapter = new BaileysAdapter('./data/auth', './data/whatsapp.db', process.env.DB_ENCRYPTION_SECRET)
   const store = adapter.getStore()
+
+  // Run pending database migrations
+  runMigrations(store.getDb())
 
   // 2. App registry + webhook dispatcher
   const registry = new AppRegistry(store, APP_ENV)

@@ -8,6 +8,9 @@ export class SQLiteStore {
   private db: Database.Database
   private encryptionKey: string | null
 
+  /** Expose raw DB for migrations runner */
+  getDb(): Database.Database { return this.db }
+
   constructor(dbPath = './data/whatsapp.db', encryptionKey?: string) {
     const dir = path.dirname(dbPath)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
