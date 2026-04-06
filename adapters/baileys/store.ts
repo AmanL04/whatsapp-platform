@@ -132,6 +132,9 @@ export class SQLiteStore {
 
     // Update chat record — only set name if we have a reliable source (groupName or
     // non-fromMe senderName). Never overwrite a good name with the user's own name.
+    // Skip status@broadcast — it's not a real chat, don't let sender names overwrite it.
+    if (msg.chatId === 'status@broadcast') return
+
     const chatName = msg.isGroup
       ? (msg.groupName ?? '')
       : (msg.isFromMe ? '' : msg.senderName)
@@ -477,11 +480,15 @@ export class SQLiteStore {
 
   /** Like rowToMessage but prefers latest names from chats table via JOIN */
   private rowToMessageWithResolvedNames(row: any): Message {
+    // Don't resolve sender name from chats table for status@broadcast — it's not a person
+    const senderName = row.sender_id === 'status@broadcast'
+      ? (row.sender_name || '')
+      : (row.resolved_sender_name || row.sender_name || '')
     return {
       id: row.id,
       chatId: row.chat_id,
       senderId: row.sender_id,
-      senderName: row.resolved_sender_name || row.sender_name || '',
+      senderName,
       content: row.content,
       type: row.type,
       mimeType: row.mime_type ?? undefined,
