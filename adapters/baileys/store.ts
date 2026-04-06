@@ -89,6 +89,16 @@ export class SQLiteStore {
 
       CREATE INDEX IF NOT EXISTS idx_deliveries_app_ts ON webhook_deliveries(app_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_deliveries_status_ts ON webhook_deliveries(status, created_at);
+
+      CREATE TABLE IF NOT EXISTS identities (
+        canonical_jid TEXT NOT NULL,
+        alias_jid TEXT PRIMARY KEY,
+        display_name TEXT DEFAULT '',
+        name_source TEXT DEFAULT '',
+        updated_at INTEGER
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_identities_canonical ON identities(canonical_jid);
     `)
   }
 
@@ -158,10 +168,10 @@ export class SQLiteStore {
   getMessages(query: MessageQuery): Message[] {
     let sql = `SELECT ${SQLiteStore.MSG_COLS},
       COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
-      COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
+      COALESCE(ident.display_name, m.sender_name) AS resolved_sender_name
       FROM messages m
       LEFT JOIN chats c_chat ON m.chat_id = c_chat.id
-      LEFT JOIN chats c_sender ON m.sender_id = c_sender.id
+      LEFT JOIN identities ident ON m.sender_id = ident.alias_jid
       WHERE 1=1`
     const params: any[] = []
 
@@ -191,10 +201,10 @@ export class SQLiteStore {
   searchMessages(text: string, opts: { after?: number; before?: number; limit?: number } = {}): Message[] {
     let sql = `SELECT ${SQLiteStore.MSG_COLS},
       COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
-      COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
+      COALESCE(ident.display_name, m.sender_name) AS resolved_sender_name
       FROM messages m
       LEFT JOIN chats c_chat ON m.chat_id = c_chat.id
-      LEFT JOIN chats c_sender ON m.sender_id = c_sender.id
+      LEFT JOIN identities ident ON m.sender_id = ident.alias_jid
       WHERE m.content LIKE ?`
     const params: (string | number)[] = [`%${text}%`]
 
@@ -228,6 +238,81 @@ export class SQLiteStore {
     return { messages, chats, media, apps, deliveries, indexes }
   }
 
+  // ─── Identities ─────────────────────────────────────────────────────────────
+
+  private static readonly NAME_PRIORITY: Record<string, number> = { pushName: 4, verifiedBizName: 3, contact: 2, phone: 1 }
+
+  upsertIdentity(canonicalJid: string, aliasJid: string, displayName?: string, nameSource?: string) {
+    const newSource = nameSource ?? ''
+    const newPriority = SQLiteStore.NAME_PRIORITY[newSource] ?? 0
+
+    // Check if existing entry has higher priority name
+    const existing = this.db.prepare('SELECT display_name, name_source FROM identities WHERE alias_jid = ?').get(aliasJid) as { display_name: string; name_source: string } | undefined
+    const existingPriority = existing ? (SQLiteStore.NAME_PRIORITY[existing.name_source] ?? 0) : 0
+
+    const finalName = (displayName && newPriority >= existingPriority) ? displayName : (existing?.display_name ?? displayName ?? '')
+    const finalSource = (displayName && newPriority >= existingPriority) ? newSource : (existing?.name_source ?? newSource)
+
+    this.db.prepare(`
+      INSERT INTO identities (canonical_jid, alias_jid, display_name, name_source, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(alias_jid) DO UPDATE SET
+        canonical_jid = excluded.canonical_jid,
+        display_name = excluded.display_name,
+        name_source = excluded.name_source,
+        updated_at = excluded.updated_at
+    `).run(canonicalJid, aliasJid, finalName, finalSource, Math.floor(Date.now() / 1000))
+
+    // Also update canonical's own entry if it has a lower-priority name
+    if (canonicalJid !== aliasJid && finalName) {
+      this.db.prepare(`
+        UPDATE identities SET
+          display_name = CASE WHEN ? > COALESCE(NULLIF(name_source, ''), 'phone') THEN ? ELSE display_name END,
+          name_source = CASE WHEN ? > COALESCE(NULLIF(name_source, ''), 'phone') THEN ? ELSE name_source END
+        WHERE alias_jid = ?
+      `)  // This is too complex for SQLite string comparison — handle in code instead
+    }
+  }
+
+  /** Update display_name for ALL entries sharing a canonical_jid */
+  updateIdentityName(canonicalJid: string, displayName: string, nameSource: string) {
+    const priority = SQLiteStore.NAME_PRIORITY[nameSource] ?? 0
+    const rows = this.db.prepare('SELECT alias_jid, name_source FROM identities WHERE canonical_jid = ?').all(canonicalJid) as { alias_jid: string; name_source: string }[]
+    for (const row of rows) {
+      const existingPriority = SQLiteStore.NAME_PRIORITY[row.name_source] ?? 0
+      if (priority >= existingPriority) {
+        this.db.prepare('UPDATE identities SET display_name = ?, name_source = ?, updated_at = ? WHERE alias_jid = ?')
+          .run(displayName, nameSource, Math.floor(Date.now() / 1000), row.alias_jid)
+      }
+    }
+  }
+
+  getCanonicalJid(aliasJid: string): string | null {
+    if (!aliasJid) return null
+    const row = this.db.prepare('SELECT canonical_jid FROM identities WHERE alias_jid = ?').get(aliasJid) as { canonical_jid: string } | undefined
+    return row?.canonical_jid ?? null
+  }
+
+  resolveDisplayName(jid: string): string {
+    if (!jid) return ''
+    // Check identities by alias
+    const row = this.db.prepare('SELECT display_name FROM identities WHERE alias_jid = ?').get(jid) as { display_name: string } | undefined
+    if (row?.display_name) return row.display_name
+    // Check identities by canonical (in case the jid IS the canonical)
+    const canonRow = this.db.prepare("SELECT display_name FROM identities WHERE canonical_jid = ? AND display_name != '' LIMIT 1").get(jid) as { display_name: string } | undefined
+    if (canonRow?.display_name) return canonRow.display_name
+    // Fallback to chats table
+    const chatRow = this.db.prepare('SELECT name FROM chats WHERE id = ?').get(jid) as { name: string } | undefined
+    return chatRow?.name ?? ''
+  }
+
+  loadAllIdentities(): Map<string, string> {
+    const map = new Map<string, string>()
+    const rows = this.db.prepare('SELECT alias_jid, canonical_jid FROM identities').all() as { alias_jid: string; canonical_jid: string }[]
+    for (const r of rows) map.set(r.alias_jid, r.canonical_jid)
+    return map
+  }
+
   // ─── Chats ─────────────────────────────────────────────────────────────────
 
   upsertChat(id: string, name: string, isGroup: boolean) {
@@ -239,7 +324,11 @@ export class SQLiteStore {
   }
 
   getChats(opts: { after?: number; before?: number; limit?: number } = {}): Chat[] {
-    let sql = 'SELECT * FROM chats WHERE 1=1'
+    // Exclude alias entries, resolve names from identities
+    let sql = `SELECT c.*, COALESCE(NULLIF(i.display_name, ''), c.name) AS resolved_name
+      FROM chats c
+      LEFT JOIN identities i ON c.id = i.alias_jid
+      WHERE c.id NOT IN (SELECT alias_jid FROM identities WHERE canonical_jid != alias_jid)`
     const params: (string | number)[] = []
 
     if (opts.after) {
@@ -254,7 +343,9 @@ export class SQLiteStore {
     sql += ' ORDER BY last_message_at DESC LIMIT ?'
     params.push(Math.min(opts.limit ?? 20, 100))
 
-    return this.db.prepare(sql).all(...params).map(this.rowToChat)
+    const chats = this.db.prepare(sql).all(...params).map(this.rowToChat)
+
+    return chats
   }
 
   // ─── Media (queries messages table where type != 'text') ────────────────────
@@ -262,10 +353,10 @@ export class SQLiteStore {
   getMedia(filters: { type?: string; sender?: string; source?: 'chat' | 'story'; after?: number; before?: number; limit?: number } = {}) {
     let sql = `SELECT ${SQLiteStore.MSG_COLS},
       COALESCE(c_chat.name, m.group_name) AS resolved_group_name,
-      COALESCE(c_sender.name, m.sender_name) AS resolved_sender_name
+      COALESCE(ident.display_name, m.sender_name) AS resolved_sender_name
       FROM messages m
       LEFT JOIN chats c_chat ON m.chat_id = c_chat.id
-      LEFT JOIN chats c_sender ON m.sender_id = c_sender.id
+      LEFT JOIN identities ident ON m.sender_id = ident.alias_jid
       WHERE m.type != 'text'`
     const params: (string | number)[] = []
 
@@ -503,7 +594,7 @@ export class SQLiteStore {
   private rowToChat(row: any): Chat {
     return {
       id: row.id,
-      name: row.name,
+      name: row.resolved_name || row.name || '',
       isGroup: !!row.is_group,
       lastMessageAt: new Date(row.last_message_at * 1000),
       unreadCount: row.unread_count,

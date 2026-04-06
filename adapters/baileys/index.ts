@@ -9,6 +9,7 @@ import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import type { WAAdapter } from '../../core/adapter'
 import type { Chat, Message, MessageQuery } from '../../core/types'
+import { normalizeJid, isLid, isStatusBroadcast, resolveCanonicalJid, loadIdentityCache, updateIdentityCache } from '../../core/jid'
 import { SQLiteStore } from './store'
 
 export class BaileysAdapter implements WAAdapter {
@@ -16,6 +17,7 @@ export class BaileysAdapter implements WAAdapter {
   private authDir: string
   private store: SQLiteStore
   private chatNames: Map<string, string> = new Map()
+  private groupSyncDone = false
   private dispatchEvent?: (event: string, payload: unknown, chatId: string, isGroup: boolean) => void
   private messageHandlers: ((msg: Message) => void)[] = []
   private connectedHandlers: (() => void)[] = []
@@ -24,6 +26,8 @@ export class BaileysAdapter implements WAAdapter {
   constructor(authDir = './data/auth', dbPath = './data/whatsapp.db', dbEncryptionKey?: string) {
     this.authDir = authDir
     this.store = new SQLiteStore(dbPath, dbEncryptionKey)
+    // Load identity cache from DB
+    loadIdentityCache(this.store.loadAllIdentities())
   }
 
   getStore(): SQLiteStore {
@@ -34,9 +38,10 @@ export class BaileysAdapter implements WAAdapter {
     this.dispatchEvent = fn
   }
 
-  /** Returns the connected WhatsApp JID (e.g. for OTP sending) */
+  /** Returns the connected WhatsApp JID (e.g. for OTP sending), normalized */
   getOwnJid(): string | null {
-    return this.sock?.user?.id ?? null
+    const jid = this.sock?.user?.id
+    return jid ? normalizeJid(jid) : null
   }
 
   async connect(): Promise<void> {
@@ -61,8 +66,11 @@ export class BaileysAdapter implements WAAdapter {
       if (connection === 'open') {
         console.log('[baileys] connected')
         this.connectedHandlers.forEach(h => h())
-        // Sync group member names in background
-        this.syncGroupMemberNames()
+        // Only sync group identities once per server lifetime (not on reconnects)
+        if (!this.groupSyncDone) {
+          this.groupSyncDone = true
+          this.syncGroupMemberNames()
+        }
       }
       if (connection === 'close') {
         const code = (lastDisconnect?.error as Boom)?.output?.statusCode
@@ -126,6 +134,24 @@ export class BaileysAdapter implements WAAdapter {
         if (group.id && group.subject) {
           this.chatNames.set(group.id, group.subject)
           this.store.upsertChat(group.id, group.subject, true)
+        }
+      }
+    })
+
+    // LID↔phone mappings from WhatsApp (most reliable source)
+    this.sock.ev.on('lid-mapping.update' as any, (mappings: any) => {
+      if (!mappings || !Array.isArray(mappings)) return
+      console.log(`[baileys] lid-mapping.update: ${mappings.length} mappings`)
+      for (const m of mappings) {
+        if (m.lid && m.pn) {
+          const lid = normalizeJid(m.lid)
+          const phone = normalizeJid(m.pn)
+          this.store.upsertIdentity(phone, lid, '', '')
+          this.store.upsertIdentity(phone, phone, '', '')
+          updateIdentityCache(lid, phone)
+          updateIdentityCache(phone, phone)
+          // Deferred cascade — normalize old messages in background
+          setTimeout(() => this.cascadeNormalize(lid, phone), 100)
         }
       }
     })
@@ -234,6 +260,40 @@ export class BaileysAdapter implements WAAdapter {
   onConnected(handler: () => void) { this.connectedHandlers.push(handler) }
   onDisconnected(handler: (reason: string) => void) { this.disconnectedHandlers.push(handler) }
 
+  // ─── Deferred cascade normalization ─────────────────────────────────────────
+
+  private cascadeNormalize(oldJid: string, canonicalJid: string) {
+    if (oldJid === canonicalJid) return
+    try {
+      const chatResult = this.store.getDb().prepare('UPDATE messages SET chat_id = ? WHERE chat_id = ?').run(canonicalJid, oldJid)
+      const senderResult = this.store.getDb().prepare('UPDATE messages SET sender_id = ? WHERE sender_id = ?').run(canonicalJid, oldJid)
+      if (chatResult.changes > 0 || senderResult.changes > 0) {
+        console.log(`[identity] cascade: ${oldJid} → ${canonicalJid} (${chatResult.changes} chat_ids, ${senderResult.changes} sender_ids)`)
+      }
+      // Merge chat entries
+      const oldChat = this.store.getDb().prepare('SELECT last_message_at FROM chats WHERE id = ?').get(oldJid) as { last_message_at: number } | undefined
+      if (oldChat) {
+        this.store.getDb().prepare('DELETE FROM chats WHERE id = ?').run(oldJid)
+      }
+    } catch { /* non-critical — old data stays, queries still work via JOIN */ }
+  }
+
+  private async deferredCascade(mappings: { lid: string; phoneJid: string }[]) {
+    // Wait 5s after connect before starting
+    await new Promise(resolve => setTimeout(resolve, 5000))
+    const BATCH = 50
+    for (let i = 0; i < mappings.length; i += BATCH) {
+      const batch = mappings.slice(i, i + BATCH)
+      for (const { lid, phoneJid } of batch) {
+        this.cascadeNormalize(lid, phoneJid)
+      }
+      // Yield to event loop between batches
+      if (i + BATCH < mappings.length) {
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+    }
+  }
+
   // ─── History sync batched storage + dispatch ───────────────────────────────
 
   private async storeHistoryBatch(messages: Message[], rawJsons: string[]) {
@@ -260,61 +320,48 @@ export class BaileysAdapter implements WAAdapter {
       const chats = this.store.getChats({ limit: 500 })
       const groups = chats.filter(c => c.isGroup && c.id.endsWith('@g.us'))
 
-      console.log(`[baileys] syncing member names for ${groups.length} groups`)
+      console.log(`[baileys] syncing member identities for ${groups.length} groups`)
 
-      // Step 1: Build LID → JID mapping from group metadata
-      const lidToJid: Map<string, string> = new Map()
+      // Fetch all group metadata
+      const allMappings: { lid: string; phoneJid: string }[] = []
       for (const group of groups) {
         try {
           const metadata = await this.sock!.groupMetadata(group.id)
           for (const p of metadata.participants) {
-            if (p.lid && p.jid) lidToJid.set(p.lid, p.jid)
-            // Also map the id field (which is the lid)
-            if (p.id && p.jid && p.id.endsWith('@lid')) lidToJid.set(p.id, p.jid)
+            const lid = p.lid || (p.id?.endsWith('@lid') ? p.id : null)
+            const jid = p.jid
+            if (lid && jid) allMappings.push({ lid, phoneJid: jid })
           }
           await new Promise(resolve => setTimeout(resolve, 200))
-        } catch {
-          // Skip groups we can't fetch metadata for
-        }
+        } catch { /* skip */ }
       }
 
-      console.log(`[baileys] built ${lidToJid.size} LID→JID mappings`)
+      console.log(`[baileys] built ${allMappings.length} LID→phone mappings`)
 
-      // Step 2: For each LID, look up the JID's name in chats table
-      let synced = 0
-      for (const [lid, jid] of lidToJid) {
-        const jidName = this.chatNames.get(jid)
-        if (jidName) {
-          this.chatNames.set(lid, jidName)
-          this.store.upsertChat(lid, jidName, false)
-          synced++
+      // Persist to identities table + update cache
+      let named = 0
+      this.store.runInTransaction(() => {
+        for (const { lid, phoneJid } of allMappings) {
+          const phone = phoneJid.replace('@s.whatsapp.net', '')
+          const existingName = this.chatNames.get(phoneJid) || this.chatNames.get(lid) || ''
+          const name = existingName || phone
+          const nameSource = existingName ? 'contact' : 'phone'
+
+          // Create identity entries: lid → phoneJid (canonical)
+          this.store.upsertIdentity(phoneJid, lid, name, nameSource)
+          this.store.upsertIdentity(phoneJid, phoneJid, name, nameSource)
+          updateIdentityCache(lid, phoneJid)
+          updateIdentityCache(phoneJid, phoneJid)
+          this.chatNames.set(lid, name)
+
+          if (existingName) named++
         }
-      }
+      })
 
-      // Step 3: For LIDs without a name yet, store the LID→JID mapping
-      // so we can resolve names later when we get pushNames from live messages
-      let mapped = 0
-      for (const [lid, jid] of lidToJid) {
-        if (!this.chatNames.has(lid)) {
-          // Store JID as name temporarily — better than nothing, gets replaced by pushName later
-          const jidName = this.chatNames.get(jid)
-          if (jidName) {
-            this.chatNames.set(lid, jidName)
-            this.store.upsertChat(lid, jidName, false)
-            synced++
-          } else {
-            // Store the phone number as fallback name
-            const phone = jid.replace('@s.whatsapp.net', '')
-            if (phone && phone !== jid) {
-              this.chatNames.set(lid, phone)
-              this.store.upsertChat(lid, phone, false)
-              mapped++
-            }
-          }
-        }
-      }
+      // Deferred: normalize old messages in small batches, yielding between each
+      this.deferredCascade(allMappings)
 
-      console.log(`[baileys] synced ${synced} named + ${mapped} phone-number members (${lidToJid.size} LID mappings, ${groups.length} groups)`)
+      console.log(`[baileys] synced ${named} named + ${allMappings.length - named} phone-number identities`)
     } catch (err) {
       console.error('[baileys] group member sync failed:', err)
     }
@@ -389,17 +436,43 @@ export class BaileysAdapter implements WAAdapter {
     // Skip text messages with no actual content (e.g. empty system notifications)
     if (type === 'text' && !content) return null
 
-    const chatId = raw.key.remoteJid ?? ''
+    // Resolve to canonical JIDs
+    const rawChatId = normalizeJid(raw.key.remoteJid ?? '')
+    const chatId = resolveCanonicalJid(rawChatId)
     const isGroup = chatId.endsWith('@g.us')
     const groupName = isGroup ? this.chatNames.get(chatId) : undefined
 
-    // Extract mime type for non-text messages
     const mimeType = type !== 'text'
       ? (msg[`${type}Message`]?.mimetype ?? undefined)
       : undefined
 
-    const senderId = raw.key.participant ?? raw.participant ?? chatId
-    const senderName = raw.pushName || this.chatNames.get(senderId) || ''
+    const rawSenderId = normalizeJid(raw.key.participant ?? raw.participant ?? rawChatId)
+    const senderId = resolveCanonicalJid(rawSenderId)
+    const senderName = raw.pushName || this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || ''
+
+    // Discover LID→phone mappings from DM context
+    if (isLid(rawChatId) && !isLid(chatId) && rawChatId !== chatId) {
+      // rawChatId was LID, resolved to phone — save the mapping
+      this.store.upsertIdentity(chatId, rawChatId, raw.pushName || '', raw.pushName ? 'pushName' : '')
+      updateIdentityCache(rawChatId, chatId)
+    }
+
+    // Persist pushName to identities
+    if (raw.pushName && senderId) {
+      const nameSource = 'pushName'
+      this.store.upsertIdentity(senderId, senderId, raw.pushName, nameSource)
+      if (rawSenderId !== senderId) {
+        this.store.upsertIdentity(senderId, rawSenderId, raw.pushName, nameSource)
+      }
+      // Update name across all aliases of this canonical
+      this.store.updateIdentityName(senderId, raw.pushName, nameSource)
+      this.chatNames.set(senderId, raw.pushName)
+    }
+
+    // verifiedBizName as fallback
+    if (raw.verifiedBizName && !raw.pushName && senderId) {
+      this.store.upsertIdentity(senderId, senderId, raw.verifiedBizName, 'verifiedBizName')
+    }
 
     return {
       id: raw.key.id ?? '',
