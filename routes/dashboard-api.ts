@@ -129,6 +129,15 @@ export function createDashboardApiRouter(
     }
   })
 
+  // Stats
+  router.get('/api/stats', (_req, res) => {
+    try {
+      res.json(store.getStats())
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
   // Existing data endpoints (for debug/viewer UI)
   router.get('/api/chats', async (_req, res) => {
     try {

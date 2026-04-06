@@ -195,6 +195,15 @@ export class SQLiteStore {
     return row?.raw_json ?? null
   }
 
+  getStats() {
+    const messages = (this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as any).c
+    const chats = (this.db.prepare('SELECT COUNT(*) as c FROM chats').get() as any).c
+    const media = (this.db.prepare("SELECT COUNT(*) as c FROM messages WHERE type != 'text'").get() as any).c
+    const apps = (this.db.prepare('SELECT COUNT(*) as c FROM apps WHERE active = 1').get() as any).c
+    const deliveries = (this.db.prepare('SELECT COUNT(*) as c FROM webhook_deliveries').get() as any).c
+    return { messages, chats, media, apps, deliveries }
+  }
+
   // ─── Chats ─────────────────────────────────────────────────────────────────
 
   upsertChat(id: string, name: string, isGroup: boolean) {
