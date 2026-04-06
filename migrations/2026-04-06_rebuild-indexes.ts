@@ -21,6 +21,13 @@ export function up(db: Database.Database): void {
     DROP INDEX IF EXISTS idx_deliveries_created;
   `)
 
+  // Also drop new names in case init() already created them
+  db.exec(`
+    DROP INDEX IF EXISTS idx_messages_chat_ts;
+    DROP INDEX IF EXISTS idx_deliveries_app_ts;
+    DROP INDEX IF EXISTS idx_deliveries_status_ts;
+  `)
+
   // Create optimized set
   db.exec(`
     CREATE INDEX idx_messages_chat_ts ON messages(chat_id, timestamp DESC);
