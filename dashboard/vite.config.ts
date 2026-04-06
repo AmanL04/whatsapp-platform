@@ -1,12 +1,21 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { readFileSync, existsSync } from 'fs'
+import { resolve } from 'path'
 
-export default defineConfig(({ mode }) => {
-  // Load .env from the parent directory (where the server's .env lives)
-  const env = loadEnv(mode, '..', '')
-  const backendPort = env.PORT || '6745'
-  const backendUrl = `http://localhost:${backendPort}`
+function getBackendPort(): string {
+  const envPath = resolve(__dirname, '..', '.env')
+  if (existsSync(envPath)) {
+    const content = readFileSync(envPath, 'utf8')
+    const match = content.match(/^PORT=(\d+)/m)
+    if (match) return match[1]
+  }
+  return '6745'
+}
+
+export default defineConfig(() => {
+  const backendUrl = `http://127.0.0.1:${getBackendPort()}`
 
   return {
     base: '/dashboard/',
