@@ -201,26 +201,130 @@ function OverviewTab() {
 // ─── Messages ────────────────────────────────────────────────────────────────
 
 function MessagesTab() {
-  const { data: chats, loading: cl, refetch: rc } = useFetch<Chat[]>(`${API}/chats`)
+  const [chats, setChats] = useState<Chat[]>([])
+  const [cl, setCl] = useState(true)
+  const [chatsExhausted, setChatsExhausted] = useState(false)
+  const [loadingMoreChats, setLoadingMoreChats] = useState(false)
   const [sel, setSel] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const filteredChats = (chats ?? []).filter(c => !search || (c.name || c.id).toLowerCase().includes(search.toLowerCase()))
-  const { data: msgs, loading: ml, refetch: rm } = useFetch<Message[]>(sel ? `${API}/messages?chatId=${sel}&limit=100` : '')
+  const [msgs, setMsgs] = useState<Message[]>([])
+  const [ml, setMl] = useState(false)
+  const [msgsExhausted, setMsgsExhausted] = useState(false)
+  const [loadingMoreMsgs, setLoadingMoreMsgs] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const selectedChat = (chats ?? []).find(c => c.id === sel)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const chatListRef = useRef<HTMLDivElement>(null)
 
-  // Auto-scroll to bottom when messages load or chat changes
-  useEffect(() => { if (msgs?.length) messagesEndRef.current?.scrollIntoView() }, [msgs, sel])
+  const PAGE = 50
+
+  // Load initial chats
+  const loadChats = useCallback(async (reset = false) => {
+    setCl(true)
+    try {
+      const r = await apiFetch(`${API}/chats?limit=${PAGE}`)
+      if (r.ok) {
+        const data = await r.json() as Chat[]
+        setChats(data)
+        setChatsExhausted(data.length < PAGE)
+      }
+    } catch { /* handled by apiFetch */ }
+    setCl(false)
+  }, [])
+
+  // Load more chats (older)
+  const loadMoreChats = useCallback(async () => {
+    if (loadingMoreChats || chatsExhausted || chats.length === 0) return
+    setLoadingMoreChats(true)
+    const oldest = chats[chats.length - 1]
+    try {
+      const r = await apiFetch(`${API}/chats?limit=${PAGE}&before=${oldest.lastMessageAt}`)
+      if (r.ok) {
+        const data = await r.json() as Chat[]
+        if (data.length === 0) { setChatsExhausted(true) } else {
+          setChats(prev => [...prev, ...data])
+          if (data.length < PAGE) setChatsExhausted(true)
+        }
+      }
+    } catch { /* handled */ }
+    setLoadingMoreChats(false)
+  }, [chats, loadingMoreChats, chatsExhausted])
+
+  // Load messages for selected chat
+  const loadMessages = useCallback(async (chatId: string) => {
+    setMl(true); setMsgs([]); setMsgsExhausted(false)
+    try {
+      const r = await apiFetch(`${API}/messages?chatId=${chatId}&limit=${PAGE}`)
+      if (r.ok) {
+        const data = await r.json() as Message[]
+        setMsgs(data)
+        setMsgsExhausted(data.length < PAGE)
+      }
+    } catch { /* handled */ }
+    setMl(false)
+  }, [])
+
+  // Load more messages (older)
+  const loadMoreMsgs = useCallback(async () => {
+    if (loadingMoreMsgs || msgsExhausted || !sel || msgs.length === 0) return
+    setLoadingMoreMsgs(true)
+    // msgs are newest-first from API, so last item is the oldest
+    const oldest = msgs[msgs.length - 1]
+    try {
+      const r = await apiFetch(`${API}/messages?chatId=${sel}&limit=${PAGE}&before=${oldest.timestamp}`)
+      if (r.ok) {
+        const data = await r.json() as Message[]
+        if (data.length === 0) { setMsgsExhausted(true) } else {
+          setMsgs(prev => [...prev, ...data])
+          if (data.length < PAGE) setMsgsExhausted(true)
+        }
+      }
+    } catch { /* handled */ }
+    setLoadingMoreMsgs(false)
+  }, [sel, msgs, loadingMoreMsgs, msgsExhausted])
+
+  useEffect(() => { loadChats() }, [loadChats])
+  useEffect(() => { if (sel) loadMessages(sel) }, [sel, loadMessages])
+
+  // Auto-scroll to bottom on initial chat load (not when loading older messages)
+  const shouldScroll = useRef(false)
+  useEffect(() => { shouldScroll.current = true }, [sel]) // flag on chat change
+  useEffect(() => {
+    if (shouldScroll.current && msgs.length > 0 && !ml) {
+      messagesEndRef.current?.scrollIntoView()
+      shouldScroll.current = false
+    }
+  }, [msgs, ml])
+
+  // Scroll handlers for infinite loading
+  const handleChatScroll = useCallback(() => {
+    const el = chatListRef.current
+    if (!el) return
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 50) loadMoreChats()
+  }, [loadMoreChats])
+
+  const handleMsgScroll = useCallback(() => {
+    const el = messagesContainerRef.current
+    if (!el) return
+    // Load more when scrolling near the top (older messages)
+    if (el.scrollTop < 50) loadMoreMsgs()
+  }, [loadMoreMsgs])
+
+  const rc = loadChats
+  const rm = () => { if (sel) loadMessages(sel) }
+  const filteredChats = chats.filter(c => !search || (c.name || c.id).toLowerCase().includes(search.toLowerCase()))
+  const selectedChat = chats.find(c => c.id === sel)
 
   return (
     <div className="flex h-[calc(100vh-72px)]" style={{ background: 'var(--tab-messages)' }}>
-      <div className="w-80 flex-shrink-0 border-r-2 border-[var(--border)] bg-[var(--bg-surface)] overflow-y-auto">
-        <div className="p-3 flex items-center gap-2">
+      <div className="w-80 flex-shrink-0 border-r-2 border-[var(--border)] bg-[var(--bg-surface)] flex flex-col">
+        <div className="h-[60px] px-4 flex items-center gap-2 border-b-2 border-[var(--border)] bg-[var(--bg-surface)] sticky top-0 z-10">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search chats..."
             className="flex-1 px-3 py-2 rounded-[var(--radius-md)] border-2 border-[var(--border)] bg-[var(--bg-surface)] text-sm font-medium placeholder-[var(--text-tertiary)] focus:outline-none focus:shadow-[var(--shadow-brutal-color)]" />
           <RefreshBtn onClick={() => { rc(); if (sel) rm() }} />
         </div>
-        {cl ? <div className="p-4 text-[var(--text-tertiary)] font-medium">Loading...</div> : filteredChats.map(c => (
+        <div className="flex-1 overflow-y-auto" ref={chatListRef} onScroll={handleChatScroll}>
+        {cl ? <div className="p-4 text-[var(--text-tertiary)] font-medium">Loading...</div> : <>
+        {filteredChats.map(c => (
           <button key={c.id} onClick={() => setSel(c.id)}
             className={`w-full text-left px-4 py-3 transition-all ${sel === c.id ? 'bg-[var(--card-amber)] border-l-4 border-l-[var(--accent)]' : 'hover:bg-[var(--bg-surface-hover)]'}`}>
             <div className="flex items-center justify-between mb-1">
@@ -233,16 +337,21 @@ function MessagesTab() {
             </div>
           </button>
         ))}
+        {loadingMoreChats && <div className="p-4 flex justify-center"><div className="w-5 h-5 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" /></div>}
+        </>}
+        </div>
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col">
         {sel && selectedChat && (
-          <div className="px-10 py-4 border-b-2 border-[var(--border)] bg-[var(--bg-surface)]">
-            <div className="font-black text-lg text-[var(--text-primary)]">{selectedChat.name || selectedChat.id}</div>
-            <div className="text-xs font-bold text-[var(--text-tertiary)]">{selectedChat.isGroup ? 'Group' : 'DM'}</div>
+          <div className="h-[60px] px-6 border-b-2 border-[var(--border)] bg-[var(--bg-surface)] flex items-center gap-3">
+            <div>
+              <div className="font-black text-sm text-[var(--text-primary)]">{selectedChat.name || selectedChat.id}</div>
+              <div className="text-[10px] font-bold text-[var(--text-tertiary)]">{selectedChat.isGroup ? 'Group' : 'DM'}</div>
+            </div>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto px-10 py-6">
+        <div className="flex-1 overflow-y-auto px-10 py-6" ref={messagesContainerRef} onScroll={handleMsgScroll}>
         {!sel ? (
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <div className="text-6xl">💬</div>
@@ -256,7 +365,8 @@ function MessagesTab() {
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {[...(msgs ?? [])].reverse().map(m => (
+              {loadingMoreMsgs && <div className="p-4 flex justify-center"><div className="w-5 h-5 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin" /></div>}
+              {[...msgs].reverse().map(m => (
                 <div key={m.id} className={`max-w-[60%] ${m.isFromMe ? 'ml-auto' : ''}`}>
                   <div className={`p-4 rounded-[var(--radius-lg)] border-2 border-[var(--border)] ${m.isFromMe ? 'bg-[var(--accent)] text-white shadow-[var(--shadow-brutal-sm)]' : 'bg-[var(--bg-surface)]'}`}>
                     {!m.isFromMe && <div className="font-black text-xs mb-1" style={{ color: 'var(--secondary)' }}>{m.senderName}</div>}
