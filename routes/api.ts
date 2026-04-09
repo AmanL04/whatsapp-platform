@@ -138,22 +138,25 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
       return
     }
 
+    const resolvedChatId = resolveCanonicalJid(chatId)
+
     // Check scope
-    const isGroup = chatId.endsWith('@g.us')
+    const isGroup = resolvedChatId.endsWith('@g.us')
     const chatType = isGroup ? 'group' : 'dm'
     if (!app.scopeChatTypes.includes(chatType as 'dm' | 'group')) {
       res.status(403).json({ error: 'chat_id is outside this app\'s scope' })
       return
     }
-    if (app.scopeSpecificChats.length > 0 && !app.scopeSpecificChats.includes(chatId)) {
+    if (app.scopeSpecificChats.length > 0 && !app.scopeSpecificChats.includes(resolvedChatId)) {
       res.status(403).json({ error: 'chat_id is outside this app\'s scope' })
       return
     }
 
     try {
-      await adapter.sendMessage(chatId, content)
+      await adapter.sendMessage(resolvedChatId, content)
       res.json({ ok: true })
     } catch (err) {
+      console.error('[api] POST /messages/send failed:', err)
       res.status(500).json({ error: String(err) })
     }
   })
