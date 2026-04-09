@@ -607,7 +607,7 @@ export class BaileysAdapter implements WAAdapter {
       type,
       mimeType,
       timestamp: new Date((raw.messageTimestamp as number) * 1000),
-      isFromMe: raw.key.fromMe ?? (senderId === this.getOwnJid()),
+      isFromMe: raw.key.fromMe || (senderId === this.getOwnJid()),
       isGroup,
       groupName,
     }
