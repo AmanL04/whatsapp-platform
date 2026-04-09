@@ -26,6 +26,15 @@ Three in-memory caches (`identityCache`, `groupCache`, `chatNames`) have synchro
 | 9 | `verifiedBizName` upsertIdentity missing cache update | index.ts:588 | Identity cache miss |
 | 10 | `group-participants.update` doesn't update `chatNames` | index.ts:170-177 | chatNames misses group subject from fresh metadata |
 
+### HIGH — Missing JID normalization in event handlers
+
+| # | Issue | Location | Impact |
+|---|---|---|---|
+| 11 | `groups.upsert` doesn't normalize group.id | index.ts:156-168 | Group metadata stored under raw JID |
+| 12 | `group-participants.update` doesn't normalize id | index.ts:170-177 | Metadata fetched/stored under raw JID |
+| 13 | `extractIdentitiesFromParticipants` doesn't normalize participant JIDs | index.ts:442-450 | `p.jid` may have device suffix (`:48`), stored raw in identity cache |
+| 14 | `refreshStaleGroups` doesn't normalize participant JIDs | index.ts:421-425 | Same as #13, device suffixes in identity mappings |
+
 ## Fixes
 
 ### Fix 1: Normalize contact JIDs (`contacts.upsert/update`)
@@ -137,11 +146,50 @@ Add after metadata fetch:
 this.chatNames.set(id, metadata.subject)
 ```
 
+### Fix 11: Normalize group.id in `groups.upsert`
+
+```typescript
+const groupId = normalizeJid(group.id)
+if (groupId && group.subject) {
+  this.chatNames.set(groupId, group.subject)
+  this.store.upsertChat(groupId, group.subject, true)
+  if (group.participants) {
+    this.groupCache.set(groupId, { subject: group.subject, participants: group.participants })
+    this.store.updateGroupMetadata(groupId, group.subject, group.participants)
+  }
+}
+```
+
+### Fix 12: Normalize id in `group-participants.update`
+
+```typescript
+const groupId = normalizeJid(id)
+const metadata = await this.sock.groupMetadata(groupId)
+this.groupCache.set(groupId, { subject: metadata.subject, participants: metadata.participants })
+this.store.updateGroupMetadata(groupId, metadata.subject, metadata.participants)
+this.chatNames.set(groupId, metadata.subject)
+```
+
+### Fix 13+14: Normalize participant JIDs in `extractIdentitiesFromParticipants` and `refreshStaleGroups`
+
+Both extract `p.jid` and `p.lid` from group metadata participants. Normalize before storage:
+
+```typescript
+// In extractIdentitiesFromParticipants:
+const lid = normalizeJid(p.lid || (p.id?.endsWith('@lid') ? p.id : null))
+const pJid = normalizeJid(p.jid)
+if (lid && pJid) mappings.push({ lid, phoneJid: pJid })
+
+// Same pattern in refreshStaleGroups loop
+```
+
+This ensures identity cache stores `919986273519@s.whatsapp.net` not `919986273519:48@s.whatsapp.net`.
+
 ## Files changed
 
 | File | Changes |
 |---|---|
-| `adapters/baileys/index.ts` | All 10 fixes — contact normalization, cascadeNormalize cleanup, identity cache updates, DM name loading, groups.update handler, groupCache sync, sendMessage repopulation |
+| `adapters/baileys/index.ts` | All 14 fixes — contact/group/participant JID normalization, cascadeNormalize cleanup, identity cache updates, DM name loading, groups.update handler, groupCache sync, sendMessage repopulation |
 
 ## Verification
 
@@ -151,3 +199,5 @@ this.chatNames.set(id, metadata.subject)
 4. Rename a group on phone — `groups.update` handler fires, cache + DB updated
 5. Send to group after cache eviction — retries, repopulates cache
 6. `cascadeNormalize` runs — old chatNames entry cleaned up
+7. Group participant JIDs stored without device suffix (`:48`) in identities table
+8. Contact JIDs stored as canonical phone JIDs, not LIDs or device JIDs
