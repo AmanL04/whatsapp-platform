@@ -318,7 +318,18 @@ export class BaileysAdapter implements WAAdapter {
 
   async sendMessage(chatId: string, content: string): Promise<void> {
     if (!this.sock) throw new Error('not connected')
-    await this.sock.sendMessage(chatId, { text: content })
+    try {
+      await this.sock.sendMessage(chatId, { text: content })
+    } catch (err) {
+      // If group send fails (stale cached participants), evict cache and retry once
+      if (chatId.endsWith('@g.us') && this.groupCache.has(chatId)) {
+        console.log(`[baileys] group send failed, evicting stale cache for ${chatId} and retrying`)
+        this.groupCache.delete(chatId)
+        await this.sock.sendMessage(chatId, { text: content })
+      } else {
+        throw err
+      }
+    }
   }
 
   async downloadMedia(mediaId: string): Promise<Buffer> {
