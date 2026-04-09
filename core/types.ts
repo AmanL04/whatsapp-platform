@@ -12,6 +12,7 @@ export interface Message {
   groupName?: string
   replyTo?: string
   reactions?: Reaction[]
+  sentByAppId?: string
 }
 
 export interface Reaction {
