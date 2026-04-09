@@ -9,7 +9,7 @@ WhatsApp (your personal account)
 ┌─────────────────────────────────────────┐
 │  WA Companion Server                    │
 │                                         │
-│  Baileys ──> SQLite (messages, media)   │
+│  Baileys ──> SQLite (messages, chats)   │
 │          ──> Webhook dispatcher         │
 │          ──> Scoped REST API            │
 │          ──> Dashboard                  │
@@ -206,3 +206,4 @@ Planned features with design docs:
 |---|---|---|
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
 | [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
+| [API reference](todos/api-reference.md) | Full docs for all endpoints: params, request/response shapes, errors | Planned |

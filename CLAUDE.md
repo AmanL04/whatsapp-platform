@@ -21,7 +21,7 @@ After implementing changes, Claude Code can self-test the full stack end-to-end 
 2. **Server boots** — `npm run start` (runs migrations first, then starts server). Verify logs show:
    - `[migrations] found N migration files, ...`
    - `[baileys] connected` (auto-reconnects using saved session, no QR needed)
-   - `[api] listening on http://localhost:3100`
+   - `[api] listening on http://localhost:6745`
    - No crash or unhandled errors
 
 3. **SQLite schema** — Query the DB directly to confirm tables exist and schema is correct:
@@ -44,21 +44,21 @@ After implementing changes, Claude Code can self-test the full stack end-to-end 
 
 6. **Webhook dispatch** — Register a test app whose webhook URL points to an endpoint on the same server:
    - Add a `POST /test/webhook` endpoint that logs received payloads
-   - Register it as an app via `POST /dashboard/api/apps` with webhook URL `http://localhost:3100/test/webhook`
+   - Register it as an app via `POST /dashboard/api/apps` with webhook URL `http://localhost:6745/test/webhook`
    - Wait for a WhatsApp message to arrive (or check if one came in during connect)
    - Verify `webhook_deliveries` table has a `delivered` row
    - Verify the test endpoint received the payload with correct HMAC signature
 
 7. **Scoped API** — Use the test app's API key:
    ```bash
-   curl -H "Authorization: Bearer <api_key>" http://localhost:3100/api/chats
+   curl -H "Authorization: Bearer <api_key>" http://localhost:6745/api/chats
    ```
    - Confirm response is filtered to the app's registered scope
    - Confirm out-of-scope requests return 403
 
 8. **Dashboard build** — `cd dashboard && npx vite build`. Must succeed with no errors.
 
-9. **Health check** — `curl http://localhost:3100/health`. Confirm `{ "status": "ok", "connected": true }`.
+9. **Health check** — `curl http://localhost:6745/health`. Confirm `{ "status": "ok", "connected": true }`.
 
 ### What Still Needs Human Testing
 
