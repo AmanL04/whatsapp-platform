@@ -153,8 +153,19 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
     }
 
     try {
-      await adapter.sendMessage(resolvedChatId, content)
-      res.json({ ok: true })
+      const messageId = await adapter.sendMessage(resolvedChatId, content)
+      if (messageId) {
+        store.preInsertSentMessage({
+          id: messageId,
+          chatId: resolvedChatId,
+          content,
+          sentByAppId: app.id,
+          timestamp: Math.floor(Date.now() / 1000),
+          isFromMe: true,
+          isGroup: resolvedChatId.endsWith('@g.us'),
+        })
+      }
+      res.json({ ok: true, messageId })
     } catch (err) {
       console.error('[api] POST /messages/send failed:', err)
       res.status(500).json({ error: String(err) })

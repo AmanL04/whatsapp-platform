@@ -16,7 +16,7 @@ export interface WAAdapter {
   searchMessages(text: string, opts?: { after?: number; before?: number; limit?: number }): Promise<Message[]>
 
   // Write
-  sendMessage(chatId: string, content: string): Promise<void>
+  sendMessage(chatId: string, content: string): Promise<string>
 
   // Media — downloads on demand from WhatsApp via raw_json
   downloadMedia(mediaId: string): Promise<Buffer>

@@ -43,10 +43,24 @@ export class SQLiteStore {
 
   upsertMessage(msg: Message, rawJson?: string) {
     this.db.prepare(`
-      INSERT OR REPLACE INTO messages
+      INSERT INTO messages
         (id, chat_id, sender_id, sender_name, content, type, mime_type, timestamp, is_from_me, is_group, group_name, reply_to, raw_json)
       VALUES
         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        chat_id = excluded.chat_id,
+        sender_id = excluded.sender_id,
+        sender_name = excluded.sender_name,
+        content = excluded.content,
+        type = excluded.type,
+        mime_type = excluded.mime_type,
+        timestamp = excluded.timestamp,
+        is_from_me = excluded.is_from_me,
+        is_group = excluded.is_group,
+        group_name = excluded.group_name,
+        reply_to = excluded.reply_to,
+        raw_json = excluded.raw_json,
+        sent_by_app_id = COALESCE(messages.sent_by_app_id, excluded.sent_by_app_id)
     `).run(
       msg.id,
       msg.chatId,
@@ -83,6 +97,19 @@ export class SQLiteStore {
       msg.isGroup ? 1 : 0,
       Math.floor(msg.timestamp.getTime() / 1000),
     )
+  }
+
+  preInsertSentMessage(msg: { id: string; chatId: string; content: string; sentByAppId: string; timestamp: number; isFromMe: boolean; isGroup: boolean }) {
+    this.db.prepare(`
+      INSERT INTO messages (id, chat_id, content, sent_by_app_id, timestamp, is_from_me, is_group, type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'text')
+      ON CONFLICT(id) DO UPDATE SET sent_by_app_id = excluded.sent_by_app_id
+    `).run(msg.id, msg.chatId, msg.content, msg.sentByAppId, msg.timestamp, msg.isFromMe ? 1 : 0, msg.isGroup ? 1 : 0)
+  }
+
+  getSentByAppId(messageId: string): string | null {
+    const row = this.db.prepare('SELECT sent_by_app_id FROM messages WHERE id = ?').get(messageId) as { sent_by_app_id: string | null } | undefined
+    return row?.sent_by_app_id ?? null
   }
 
   private static readonly MSG_COLS = 'm.id, m.chat_id, m.sender_id, m.sender_name, m.content, m.type, m.mime_type, m.timestamp, m.is_from_me, m.is_group, m.group_name, m.reply_to'

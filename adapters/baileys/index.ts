@@ -250,6 +250,10 @@ export class BaileysAdapter implements WAAdapter {
             this.store.upsertChat(msg.senderId, msg.senderName, false)
           }
 
+          // Attach sentByAppId if this message was sent via the API
+          const sentByAppId = this.store.getSentByAppId(msg.id)
+          if (sentByAppId) msg.sentByAppId = sentByAppId
+
           this.messageHandlers.forEach(h => h(msg))
 
           // Dispatch to external apps
@@ -316,19 +320,25 @@ export class BaileysAdapter implements WAAdapter {
     return this.store.searchMessages(text, opts)
   }
 
-  async sendMessage(chatId: string, content: string): Promise<void> {
+  async sendMessage(chatId: string, content: string): Promise<string> {
     if (!this.sock) throw new Error('not connected')
     try {
-      await this.sock.sendMessage(chatId, { text: content })
+      const sent = await this.sock.sendMessage(chatId, { text: content })
+      return sent?.key?.id ?? ''
     } catch (err) {
       // If group send fails (stale cached participants), evict cache and retry once
       if (chatId.endsWith('@g.us') && this.groupCache.has(chatId)) {
         console.log(`[baileys] group send failed, evicting stale cache for ${chatId} and retrying`)
         this.groupCache.delete(chatId)
-        await this.sock.sendMessage(chatId, { text: content })
-      } else {
-        throw err
+        const sent = await this.sock.sendMessage(chatId, { text: content })
+        try {
+          const metadata = await this.sock!.groupMetadata(chatId)
+          this.groupCache.set(chatId, { subject: metadata.subject, participants: metadata.participants })
+          this.store.updateGroupMetadata(chatId, metadata.subject, metadata.participants)
+        } catch { /* non-critical */ }
+        return sent?.key?.id ?? ''
       }
+      throw err
     }
   }
 

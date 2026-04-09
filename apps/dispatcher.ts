@@ -57,12 +57,17 @@ export class WebhookDispatcher {
     const eventConfig = app.webhookEvents.find(e => e.name === eventName)
     const url = eventConfig?.url || app.webhookGlobalUrl
 
-    // Build envelope
+    // Build envelope — add sentByYou if the message was sent via API
+    const sentByAppId = (payload as any)?.sentByAppId
+    const webhookPayload = sentByAppId !== undefined
+      ? { ...(payload as any), sentByYou: sentByAppId === app.id, sentByAppId: undefined }
+      : payload
+
     const envelope: WebhookEnvelope = {
       event: eventName,
       appId: app.id,
       timestamp: new Date().toISOString(),
-      payload,
+      payload: webhookPayload,
     }
 
     const body = JSON.stringify(envelope)

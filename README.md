@@ -208,5 +208,5 @@ Planned features with design docs:
 | [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
 | [API reference](todos/api-reference.md) | Full docs for all endpoints: params, request/response shapes, errors | Planned |
 | [Cache sync](todos/cache-sync.md) | Fix identity/group/chatNames cache-DB desync: missing updates, stale LID entries, startup gaps | Planned |
-| [API sent tracking](todos/api-sent-tracking.md) | Track which app sent each API message, expose `sentByYou` in webhooks to prevent bot loops | Planned |
+| [API sent tracking](todos/api-sent-tracking.md) | Track which app sent each API message, expose `sentByYou` in webhooks to prevent bot loops | Done |
 | [Message edits](todos/message-edits.md) | Handle WhatsApp message edits: update content in DB, dispatch `message.edited` webhook | Planned |
