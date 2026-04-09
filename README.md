@@ -207,3 +207,4 @@ Planned features with design docs:
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
 | [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
 | [API reference](todos/api-reference.md) | Full docs for all endpoints: params, request/response shapes, errors | Planned |
+| [Cache sync](todos/cache-sync.md) | Fix identity/group/chatNames cache-DB desync: missing updates, stale LID entries, startup gaps | Planned |
