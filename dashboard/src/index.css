@@ -33,6 +33,7 @@
   --tab-media: #CCFBF1;
   --tab-apps: #EDE9FE;
   --tab-logs: #FFE4E6;
+  --tab-mcp: #F0FDF4;
 
   --card-amber: #FEF3C7;
   --card-teal: #CCFBF1;
@@ -87,6 +88,7 @@
   --tab-media: var(--bg-base);
   --tab-apps: var(--bg-base);
   --tab-logs: var(--bg-base);
+    --tab-mcp: var(--bg-base);
 
   --card-amber: rgba(251, 191, 36, 0.15);
   --card-teal: rgba(45, 212, 191, 0.12);

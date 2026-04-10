@@ -126,6 +126,23 @@ npm run reconnect
 - If the server is running: signals it to reconnect (check server logs for QR)
 - If the server is crashed: starts standalone Baileys, prints QR, saves auth, exits
 
+### MCP Server (AI Assistants)
+
+Expose WhatsApp data to Claude, Cursor, or any MCP-compatible AI tool. See [docs/mcp-server.md](docs/mcp-server.md) for full setup guide.
+
+**Claude Code (recommended):**
+```bash
+claude mcp add --transport http whatsapp http://localhost:3111/mcp
+```
+On first use, browser opens for WhatsApp OTP login (OAuth 2.1). After authenticating, tools work immediately.
+
+**Standalone stdio** (Claude Desktop, local-only):
+```bash
+npm run mcp
+```
+
+**Tools:** `list_chats`, `get_messages`, `search_messages`, `get_media`, `get_chat_info`, `send_message`
+
 ## Deploy to Railway
 
 ### 1. Create Railway project
@@ -190,6 +207,9 @@ routes/
   dashboard-api.ts          — admin endpoints for dashboard
 cli/
   reconnect.ts              — emergency reconnect command
+mcp/
+  server.ts                 — MCP server factory (shared between stdio + HTTP transports)
+  auth.ts                   — OAuth 2.1 provider (WhatsApp OTP login, token management)
 migrations/
   runner.ts                 — migration runner (sorted, transactional, idempotent)
   run.ts                    — standalone entry point (npm run migrate)
@@ -205,6 +225,7 @@ docs/
   open-questions.md             — unresolved design questions (app-to-user comms, naming, stress testing)
   app-publishing-approaches.md  — four publishing approaches (A-D) and settings ownership decision
   app-settings-design.md        — why apps own their settings (marketplace precedents, Option 1 vs 2)
+  mcp-server.md                  — MCP server setup, tools, auth, architecture
 todos/                      — planned feature specs
 dashboard/                  — Vite + React + Tailwind SPA
 ```
@@ -216,10 +237,11 @@ Planned features with design docs:
 | Feature | Plan | Status |
 |---|---|---|
 | **Platform** | | |
-| [MCP server](todos/mcp-server.md) | Expose chats, messages, media, search as MCP tools for AI assistants (Claude, Cursor, etc.) | Planned |
+| MCP server | Expose chats, messages, media, search as MCP tools for AI assistants — `npm run mcp` | Done |
 | [App catalog & installation](todos/app-publishing.md) | Manifest format, catalog loader, install/uninstall flow, dashboard catalog UI (Approach A) | Planned |
 | [First-party apps](todos/first-party-apps.md) | 6 external apps (Summary, Search, Tasks, Voice Transcribe, Media Recap, Read Later) using the webhook+API system | Planned |
 | [Update CLAUDE.md](todos/update-claude-md.md) | Refresh Claude Code context file with current state, new focus areas, and doc pointers | Planned |
 | **Server** | | |
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
 | [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
+| [Audit logging](todos/api-audit-logging.md) | Log MCP tool calls, app API requests, dashboard usage — console + DB + dashboard UI | Planned |

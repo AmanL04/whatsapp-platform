@@ -125,6 +125,22 @@ handle updates). Becomes important the moment third-party apps exist.
 
 ---
 
+### MCP OAuth OTP endpoints are unauthenticated
+
+**Context:** `/auth/mcp/send-otp` and `/auth/mcp/verify-otp` are public endpoints — anyone who knows the server URL can trigger OTP sends to the owner's WhatsApp. The existing rate limit (3 OTPs per 5 minutes, 5 verify attempts per OTP) mitigates spam, but a determined attacker could grief the owner with repeated OTP messages across rate windows.
+
+**Options to consider:**
+- **CAPTCHA on the authorize page** — prevents automated abuse. Adds complexity and a third-party dependency.
+- **IP-based rate limiting** — tighter limits per IP on top of the global OTP rate limit. Simple but bypassable with proxies.
+- **Require the OAuth client_id + request_id pair** — OTP endpoints only work if there's a valid pending auth request in `mcp_auth_codes`. Already partially true (verify needs requestId), but send-otp doesn't check.
+- **Accept the risk** — this is a self-hosted personal server. The attacker needs to know the URL, and the worst case is a few OTP messages. The existing rate limit is probably sufficient.
+
+**Likely answer:** Tie send-otp to a valid pending auth request (require `requestId` from the authorize flow). This ensures OTP can only be triggered after a legitimate OAuth flow starts, not by hitting the endpoint directly.
+
+**Decision needed:** Before deploying to a public URL.
+
+---
+
 ## Resolved
 
 ### config.updated webhook event
