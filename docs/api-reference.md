@@ -77,10 +77,13 @@ Get messages, optionally filtered by chat.
       "senderName": "Aman Lodha",
       "content": "Hello",
       "type": "text",
+      "mimeType": null,
       "timestamp": "2026-04-06T12:30:00.000Z",
       "isFromMe": false,
       "isGroup": true,
       "groupName": "OTT ka OTP",
+      "replyTo": null,
+      "editedAt": null,
       "reactions": [
         {
           "messageId": "A5808E945D659F14",
@@ -240,7 +243,8 @@ Response shapes match the external API but without scope filtering. Dashboard me
   "chats": 375,
   "media": 890,
   "apps": 3,
-  "deliveries": 4200
+  "deliveries": 4200,
+  "indexes": ["idx_messages_chat_ts", "idx_messages_sender", "..."]
 }
 ```
 
