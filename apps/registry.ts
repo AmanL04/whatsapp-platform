@@ -33,10 +33,6 @@ export class AppRegistry {
       }
     }
 
-    // Webhook URL required if events are subscribed
-    if (input.webhookEvents?.length && !input.webhookGlobalUrl) {
-      throw new Error('Webhook URL is required when subscribing to events')
-    }
 
     const id = 'app_' + crypto.randomBytes(12).toString('hex')
     const apiKey = 'wak_' + crypto.randomBytes(32).toString('hex')
