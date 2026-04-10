@@ -2,7 +2,7 @@
 
 > Implement static manifest-based app catalog. See
 > `docs/app-publishing-approaches.md` for the full comparison of approaches
-> and the config storage design.
+> and `docs/app-settings-design.md` for the settings ownership decision.
 
 ## What
 
@@ -26,7 +26,8 @@ interface AppManifest {
   // Connection
   webhookUrl: string              // where the server sends events
   setupUrl?: string               // POST here with credentials on install
-  uiUrl: string                   // link to app's own UI
+  uiUrl: string                   // link to app's main UI
+  settingsUrl?: string            // link to app's settings page (defaults to uiUrl)
 
   // Requirements
   requiredPermissions: Permission[]
@@ -34,19 +35,11 @@ interface AppManifest {
   requiredScope: {
     chatTypes: ('dm' | 'group')[]
   }
-
-  // Optional: user-configurable settings
-  configSchema?: {
-    [key: string]: {
-      type: 'string' | 'number' | 'boolean' | 'select'
-      label: string
-      description?: string
-      default: any
-      options?: string[]          // for select type
-    }
-  }
 }
 ```
+
+Note: No `configSchema`. Apps own all their settings and host their own
+settings UI. See `docs/app-settings-design.md` for rationale.
 
 ## File Structure
 
@@ -75,8 +68,7 @@ catalog/
        "action": "install",
        "apiKey": "wak_...",
        "webhookSecret": "whs_...",
-       "serverUrl": "https://...",
-       "config": { ...defaults from manifest }
+       "serverUrl": "https://..."
      }
      ```
    - Returns: app ID, installed status
@@ -86,21 +78,12 @@ catalog/
    - POSTs `{ "action": "uninstall" }` to `setupUrl`
    - Keeps registration record for delivery log history
 
-5. **Config endpoint:** `GET /api/config` (app-scoped)
-   - Returns current config values for the calling app
-   - Filters through manifest schema (defaults for missing, drops orphaned)
-
-6. **Config update:** `PUT /dashboard-api/apps/:id/config`
-   - Accepts: `{ key: value, ... }`
-   - Validates against manifest's configSchema
-   - Stores in `app_config` table
-
 ## Database Changes
 
 New migration:
-- `app_config` table (app_id, key, value — see docs for schema)
 - New columns on `apps` table: `manifest_slug` (nullable), `ui_url`
-  (nullable), `installed_from_catalog` (boolean, default false)
+  (nullable), `settings_url` (nullable), `installed_from_catalog`
+  (boolean, default false)
 
 ## Dashboard Changes
 
@@ -109,7 +92,7 @@ New migration:
   to dashboard with auth check
 - **Dashboard installed apps** (`/apps`, behind auth): Cards showing
   installed apps with health status, permissions, scope, "Open" button
-  (links to app's uiUrl), "Settings" button (renders configSchema form),
+  (links to app's uiUrl), "Settings" button (links to app's settingsUrl),
   "Uninstall" button
 
 ## Implementation Order
@@ -117,14 +100,12 @@ New migration:
 1. Define manifest JSON schema + validation utility
 2. Create `catalog/` directory with OTT ka OTP manifest
 3. Add startup catalog loader (read + validate + cache)
-4. Database migration: app_config table, new apps columns
-5. Build `GET /api/config` endpoint
-6. Build install endpoint (`POST /dashboard-api/apps/install`)
-7. Build uninstall endpoint (`POST /dashboard-api/apps/:id/uninstall`)
-8. Build config update endpoint (`PUT /dashboard-api/apps/:id/config`)
-9. Dashboard: installed apps cards view
-10. Dashboard: public catalog page
-11. Test end-to-end with OTT ka OTP manifest
+4. Database migration: new apps columns (manifest_slug, ui_url, settings_url)
+5. Build install endpoint (`POST /dashboard-api/apps/install`)
+6. Build uninstall endpoint (`POST /dashboard-api/apps/:id/uninstall`)
+7. Dashboard: installed apps cards view
+8. Dashboard: public catalog page
+9. Test end-to-end with OTT ka OTP manifest
 
 ## Status
 

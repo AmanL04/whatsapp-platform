@@ -125,25 +125,13 @@ handle updates). Becomes important the moment third-party apps exist.
 
 ---
 
+## Resolved
+
 ### config.updated webhook event
 
-**Context:** When a user changes an app's settings in the dashboard, the
-new values are stored in SQLite. The app reads them next time it calls
-`GET /api/config`. But if the app needs to react immediately (e.g., change
-summary schedule time), it has to poll.
-
-**Option:** Deliver a `config.updated` webhook event to the app whenever
-the user changes a setting. The payload includes the full updated config.
-
-**Trade-off:** Adds an event type and dispatch logic. But it's a small
-addition and prevents apps from having to poll for config changes.
-
-**Decision needed:** Before building the config API. Likely a "yes, include
-it" — low cost, high value.
-
----
-
-## Resolved
+**Decided:** Moot. The platform does not store app settings, so there's no
+config change to notify about. Apps own their settings entirely.
+See `docs/app-settings-design.md`.
 
 ### App catalog: public page vs dashboard-only
 

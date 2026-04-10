@@ -203,7 +203,8 @@ docs/
   competitive-landscape.md      — competitive analysis (OpenClaw, WAHA, Business API providers)
   decisions-and-constraints.md  — architectural decisions and protocol-level constraints
   open-questions.md             — unresolved design questions (app-to-user comms, naming, stress testing)
-  app-publishing-approaches.md  — four publishing approaches (A-D), app config storage and schema evolution
+  app-publishing-approaches.md  — four publishing approaches (A-D) and settings ownership decision
+  app-settings-design.md        — why apps own their settings (marketplace precedents, Option 1 vs 2)
 todos/                      — planned feature specs
 dashboard/                  — Vite + React + Tailwind SPA
 ```

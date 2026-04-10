@@ -48,6 +48,7 @@ interface AppManifest {
   webhookUrl: string           // where the server sends events
   setupUrl?: string            // POST here with API key on install
   uiUrl: string                // link to app's own UI/dashboard
+  settingsUrl?: string         // link to app's settings page (defaults to uiUrl)
 
   // Requirements
   requiredPermissions: Permission[]
@@ -55,18 +56,11 @@ interface AppManifest {
   requiredScope: {
     chatTypes: ('dm' | 'group')[]
   }
-
-  // Optional: app-specific settings the user can configure
-  configSchema?: {
-    [key: string]: {
-      type: 'string' | 'number' | 'boolean' | 'select'
-      label: string
-      default: any
-      options?: string[]      // for select type
-    }
-  }
 }
 ```
+
+Note: No `configSchema`. Apps own all their settings and host their own
+settings UI. See `docs/app-settings-design.md` for rationale.
 
 ## Installation Flow
 
@@ -90,12 +84,6 @@ interface AppManifest {
 3. Server POSTs to the app's `setupUrl` with `{ "action": "uninstall" }`
 4. Registration record is deactivated (kept for logs, not deleted)
 
-## App Config Storage
-
-If the manifest includes a `configSchema`, the server stores user-set config
-values per app in a new `app_config` table. Apps can read their config via a
-new API endpoint: `GET /api/config` (scoped to the calling app's own config).
-
 ## Dashboard UI Changes
 
 The existing "Apps" tab evolves into two views:
@@ -107,7 +95,7 @@ Shows each installed app as a card:
 - Permissions summary
 - Scope (which chats)
 - "Open" button → navigates to app's `uiUrl`
-- "Settings" button → renders configSchema form
+- "Settings" button → navigates to app's `settingsUrl`
 - "Uninstall" button
 
 ### App Catalog (second view)
@@ -117,19 +105,18 @@ Shows each installed app as a card:
 
 ## Database Changes
 
-New table: `app_manifests` — stores fetched manifest JSON per app
-New table: `app_config` — key/value pairs per app for user settings
-New column on `apps`: `manifest_url` (nullable) — links to source manifest
+New column on `apps`: `manifest_slug` (nullable) — links to catalog entry
 New column on `apps`: `ui_url` (nullable) — for the "Open" button
+New column on `apps`: `settings_url` (nullable) — for the "Settings" button
+New column on `apps`: `installed_from_catalog` (boolean, default false)
 
 ## Implementation Order
 
 1. Define manifest schema + validation
-2. Add manifest_url and ui_url columns to apps table (migration)
+2. Add new columns to apps table (migration)
 3. Build install endpoint: POST /dashboard-api/apps/install
 4. Build uninstall endpoint: POST /dashboard-api/apps/:id/uninstall
-5. Add app_config table + GET /api/config endpoint
-6. Update dashboard Apps tab with installed apps cards + catalog view
+5. Update dashboard Apps tab with installed apps cards + catalog view
 
 ## Status
 

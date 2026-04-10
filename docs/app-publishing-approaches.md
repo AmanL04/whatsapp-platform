@@ -105,103 +105,14 @@ This is Shopify App Store / Chrome Web Store territory.
 
 ---
 
-## App Settings & Config (applies to all approaches)
+## App Settings
 
-### The model
+**Decision:** The platform does NOT store or manage app settings. Apps own
+all their configuration. The dashboard links to the app's own settings page
+via `settingsUrl`.
 
-The **app defines** what settings it needs via `configSchema` in its manifest.
-The **server stores** the user's chosen values. The **app reads** its config
-via the API.
-
-```
-App manifest (defines schema) → User sets values (dashboard UI) →
-Server stores values (SQLite) → App reads values (GET /api/config)
-```
-
-### Storage
-
-A single `app_config` table in the WA Companion SQLite database:
-
-```sql
-CREATE TABLE app_config (
-  app_id    TEXT NOT NULL,
-  key       TEXT NOT NULL,
-  value     TEXT NOT NULL,  -- JSON-encoded value
-  PRIMARY KEY (app_id, key),
-  FOREIGN KEY (app_id) REFERENCES apps(id)
-);
-```
-
-Config values are stored as JSON strings. The server doesn't interpret
-them — it stores what the user sets and returns it when the app asks.
-
-### No app-specific migrations
-
-Apps do NOT have their own database tables or migrations inside the WA
-Companion server. The `app_config` table is generic — it works for every
-app via key-value pairs. This is deliberate:
-
-- Apps are external services. They should not modify the server's schema.
-- A generic key-value store is flexible enough for any config shape.
-- If an app needs complex structured storage, it maintains its own
-  database in its own service.
-
-### Schema evolution (what happens when config changes)
-
-**New field added** (e.g., v2 adds `timezone`):
-- Server compares stored config against the new manifest schema
-- Missing keys get populated with the default from the manifest
-- No migration needed — defaults fill the gap
-- Dashboard shows the new field on the settings page
-
-**Field removed** (e.g., v2 drops `legacySetting`):
-- Server ignores stored keys not in the current schema
-- Old values stay in the database (harmless) but don't appear in the UI
-- `GET /api/config` only returns keys from the current schema
-- No migration needed — orphaned keys are invisible
-
-**Field type changed** (e.g., `timeout` from number to select):
-- Server validates stored value against the new type
-- If incompatible, resets to the new default
-- Dashboard surfaces a notice: "Setting X was reset due to an app update"
-
-**Bottom line:** No app-specific migrations ever. The config schema in the
-manifest is the source of truth. Schema evolution is handled by defaults
-and validation, not migrations.
-
-### How apps read config
-
-New API endpoint, scoped to the calling app:
-
-```
-GET /api/config
-Authorization: Bearer wak_...
-
-Response:
-{
-  "otpRetentionMinutes": 10,
-  "notifyOnDetection": true
-}
-```
-
-The server looks up the app by API key, reads config from `app_config`,
-filters through the current manifest schema (dropping orphaned keys,
-filling defaults for missing keys), and returns the result.
-
-### Stored, not fetched in real-time
-
-The server stores config in SQLite and serves it via the API. It does NOT
-call out to the app to fetch config — that would create a circular
-dependency and add latency to every config read.
-
-The flow is one-directional:
-1. User changes a setting in the dashboard
-2. Server writes to `app_config`
-3. App reads it next time it calls `GET /api/config`
-
-If the app needs to know about config changes immediately (not just on
-next poll), the server can optionally deliver a `config.updated` webhook
-event. Nice-to-have, not a launch requirement.
+See `docs/app-settings-design.md` for the full discussion, marketplace
+precedents, and rationale.
 
 ---
 
