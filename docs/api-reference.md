@@ -326,19 +326,17 @@ if (request.headers['x-webhook-signature'] !== expected) reject
 | Event | When | Payload |
 |---|---|---|
 | `message.received` | Message from someone else | Message object |
-| `message.sent` | Message from the account owner | Message object (+ `sentByYou` if API-sent) |
+| `message.sent` | Message from the account owner | Message object + `sentByYou` boolean |
 | `media.received` | Media message received | Message object (type != text) |
 | `message.reaction` | Emoji reaction added/removed | `{ messageId, chatId, senderId, senderName, emoji, action }` |
 | `chat.updated` | Chat metadata changed | `{ id, name }` |
 
 ### `sentByYou` field
 
-When a message was sent via `POST /api/messages/send`, the webhook payload includes:
+Present on all `message.sent` webhooks. Not present on `message.received` (always someone else's message).
 
-- `sentByYou: true` — if the receiving app is the one that sent the message
-- `sentByYou: false` — if a different app sent it via the API
-
-Messages sent from the phone have no `sentByYou` field.
+- `sentByYou: true` — this app sent it via the API
+- `sentByYou: false` — sent from phone or by a different app via the API
 
 **Use this to prevent bot loops:**
 ```javascript
