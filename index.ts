@@ -17,6 +17,8 @@ import { createDashboardApiRouter } from './routes/dashboard-api'
 import { cleanOldDeliveries } from './apps/cleanup'
 import type { EventName } from './core/events'
 import cron from 'node-cron'
+import { createMcpServer } from './mcp/server'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 
 // ─── Environment validation ──────────────────────────────────────────────────
 
@@ -154,6 +156,18 @@ async function main() {
       res.sendFile(path.join(dashboardDist, 'index.html'))
     })
   }
+
+  // ─── /mcp — MCP server for AI assistants ──────────────────────────────────
+
+  const mcpServer = createMcpServer(adapter, store)
+  const mcpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
+  await mcpServer.connect(mcpTransport)
+
+  app.all('/mcp', async (req, res) => {
+    await mcpTransport.handleRequest(req, res, req.body)
+  })
+
+  console.log('[mcp] MCP server mounted at /mcp')
 
   // ─── Test webhook endpoint (local self-testing only) ──────────────────────
 

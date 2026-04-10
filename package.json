@@ -12,10 +12,12 @@
     "start": "npm run migrate && tsx index.ts",
     "build": "cd dashboard && npm install && npx vite build",
     "typecheck": "tsc --noEmit",
-    "reconnect": "tsx cli/reconnect.ts"
+    "reconnect": "tsx cli/reconnect.ts",
+    "mcp": "tsx mcp/server.ts"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@whiskeysockets/baileys": "^6.7.0",
     "better-sqlite3": "^11.0.0",
     "cookie-parser": "^1.4.7",

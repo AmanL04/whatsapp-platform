@@ -126,6 +126,30 @@ npm run reconnect
 - If the server is running: signals it to reconnect (check server logs for QR)
 - If the server is crashed: starts standalone Baileys, prints QR, saves auth, exits
 
+### MCP Server (AI Assistants)
+
+Expose WhatsApp data to Claude, Cursor, or any MCP-compatible AI tool:
+
+```bash
+npm run mcp
+```
+
+Runs on stdio. Add to Claude Desktop config (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "whatsapp": {
+      "command": "npm",
+      "args": ["run", "mcp"],
+      "cwd": "/path/to/whatsapp"
+    }
+  }
+}
+```
+
+**Available tools:** `list_chats`, `get_messages`, `search_messages`, `get_media`, `get_chat_info`
+
 ## Deploy to Railway
 
 ### 1. Create Railway project
@@ -190,6 +214,8 @@ routes/
   dashboard-api.ts          — admin endpoints for dashboard
 cli/
   reconnect.ts              — emergency reconnect command
+mcp/
+  server.ts                 — MCP server (stdio transport, read-only tools for AI assistants)
 migrations/
   runner.ts                 — migration runner (sorted, transactional, idempotent)
   run.ts                    — standalone entry point (npm run migrate)
@@ -216,7 +242,7 @@ Planned features with design docs:
 | Feature | Plan | Status |
 |---|---|---|
 | **Platform** | | |
-| [MCP server](todos/mcp-server.md) | Expose chats, messages, media, search as MCP tools for AI assistants (Claude, Cursor, etc.) | Planned |
+| MCP server | Expose chats, messages, media, search as MCP tools for AI assistants — `npm run mcp` | Done |
 | [App catalog & installation](todos/app-publishing.md) | Manifest format, catalog loader, install/uninstall flow, dashboard catalog UI (Approach A) | Planned |
 | [First-party apps](todos/first-party-apps.md) | 6 external apps (Summary, Search, Tasks, Voice Transcribe, Media Recap, Read Later) using the webhook+API system | Planned |
 | [Update CLAUDE.md](todos/update-claude-md.md) | Refresh Claude Code context file with current state, new focus areas, and doc pointers | Planned |
