@@ -99,7 +99,7 @@ export class SQLiteStore {
     )
   }
 
-  editMessage(messageId: string, newContent: string, editedAt: number): { oldContent: string | null; found: boolean } {
+  editMessage(messageId: string, newContent: string, editedAt: number): { oldContent: null; found: false } | { oldContent: string; found: true } {
     const existing = this.db.prepare(
       'SELECT content FROM messages WHERE id = ?'
     ).get(messageId) as { content: string } | undefined
