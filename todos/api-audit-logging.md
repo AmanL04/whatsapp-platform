@@ -47,6 +47,21 @@ Basic MCP client visibility exists — dashboard MCP tab shows registered client
 - Cleanup cron for old log entries (same pattern as webhook deliveries)
 - **Cleanup cron for expired OAuth data:** `mcp_auth_codes` (expired after 5 min) and `mcp_tokens` (expired access tokens after 1h, refresh tokens after 30d) accumulate stale rows. Add cleanup to the daily cron alongside `cleanOldDeliveries`.
 
+## MCP tool enhancements (future)
+
+- `get_message_edits` tool — expose edit history API via MCP (endpoint exists, tool doesn't)
+- `download_media` tool — return media as base64 or temp URL
+- `get_stats` tool — expose server stats (message count, chats, media, apps)
+- `list_chats` `has_unread` filter — filter to only chats with unread messages
+- `get_chat_info` for DMs — return contact name, not just chatId
+- MCP prompts — pre-built templates like "daily summary", "unread recap" (low priority — Claude composes these naturally)
+
+## MCP security fixes (from code review)
+
+- `exchangeAuthorizationCode` should always verify redirect_uri (not skip when undefined)
+- Refresh token infinite session — `created_at` resets on refresh, 30-day window never expires. Store original auth time.
+- `handleAuthVerifyOtp` auth code UPDATE race condition — use DELETE+INSERT or check changes
+
 ## Status
 
 Deferred — basic MCP client visibility shipped, full audit logging later.
