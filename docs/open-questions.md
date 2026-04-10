@@ -5,7 +5,9 @@
 
 ---
 
-## How do apps communicate back to the user?
+## Open
+
+### How do apps communicate back to the user?
 
 **Context:** Apps receive data (webhooks) and query data (REST API). But the
 Daily Summary app needs to *deliver* the summary somewhere. The Task Extractor
@@ -35,7 +37,7 @@ Apps choose which delivery method fits their use case.
 
 ---
 
-## Product naming
+### Product naming
 
 **Context:** "WA Companion" is descriptive but generic — sounds like a
 utility, not a platform. It won't stick in someone's memory after a pitch
@@ -56,44 +58,99 @@ before any public launch, landing page, or developer marketing.
 
 ---
 
-## Webhook + API stress testing
+### Webhook + API stress testing
 
-**Context:** OTT ka OTP is running in production and uses the webhook + API
-interface successfully. This validates the core flow. However, OTT ka OTP
-is a single app with a specific use pattern. Things worth testing with
-multiple concurrent apps:
+**Context:** OTT ka OTP is running in production and validates the core
+webhook + API flow. However, it's a single app with a specific use pattern.
+Things worth testing with multiple concurrent apps:
 
-**Potential issues to probe:**
-- High-frequency message bursts: what happens when a group chat gets 50
-  messages in 10 seconds and 3 apps are subscribed? Does the dispatcher
-  handle concurrent POSTs without dropping events?
-- Slow webhook receivers: if one app's endpoint takes 8 seconds to respond,
-  does it block delivery to other apps? (Current impl uses Promise.allSettled,
-  so it shouldn't — but worth confirming under load.)
-- Payload size for media events: are large media metadata payloads causing
-  timeouts on the receiving end?
-- API rate limiting with multiple apps: 100 req/min is per-app, but is the
-  global server capacity sufficient when 5 apps each hit 80 req/min?
-- Webhook retry storms: if an app goes down and all 3 retries fire for every
-  message, does the retry backlog grow unboundedly during extended downtime?
-- Scope filtering performance: as the number of apps grows, does
-  `getSubscribedApps()` (which iterates all apps on every message) become
-  a bottleneck?
+- High-frequency message bursts: 50 messages in 10 seconds with 3 apps
+  subscribed. Does the dispatcher handle concurrent POSTs without drops?
+- Slow webhook receivers: one app takes 8 seconds to respond. Does it
+  block delivery to others? (Promise.allSettled should prevent this.)
+- Payload size for media events: large metadata causing receiver timeouts?
+- API rate limiting: 100 req/min is per-app, but is the global server
+  capacity sufficient when 5 apps each hit 80 req/min?
+- Webhook retry storms: app goes down, all 3 retries fire for every
+  message. Does the backlog grow unboundedly during extended downtime?
+- Scope filtering performance: does `getSubscribedApps()` (iterates all
+  apps per message) become a bottleneck as app count grows?
 
-**Not blocking launch** — OTT ka OTP proves the happy path works. But worth
-running a deliberate stress test before adding the 4th or 5th concurrent app.
+**Not blocking launch.** Worth running a deliberate stress test before
+adding the 4th or 5th concurrent app.
 
 ---
 
-## App catalog: public page vs dashboard-only
+### setupUrl reliability during installation
 
-**Context:** Discussed in this conversation. The recommendation is:
+**Context:** When a user clicks "Install," the server creates a registration
+and POSTs credentials to the app's `setupUrl`. What happens if that URL is
+unreachable?
+
+**Options:**
+- **Fail the installation entirely** — safest. User sees "App unreachable,
+  try again later." No orphaned registrations. But frustrating if the app
+  is temporarily slow.
+- **Install but mark as "pending setup"** — registration is created, but
+  the app is flagged as not yet configured. Server retries the setupUrl
+  POST in the background. Dashboard shows "Waiting for app to respond."
+  App starts receiving webhooks only after setup succeeds.
+- **Install and let the app pull credentials** — instead of pushing
+  credentials to setupUrl, the app fetches them via a one-time token.
+  Avoids the reachability problem entirely but requires the app to know
+  how to pull credentials (more complex manifest).
+
+**Decision needed:** Before building the install endpoint.
+
+---
+
+### App version updates and permission changes
+
+**Context:** Config schema evolution is covered (defaults fill gaps, orphaned
+keys are invisible). But what about the app itself changing its `webhookUrl`,
+`requiredPermissions`, or `requiredEvents` between versions?
+
+**Questions:**
+- Does the user need to uninstall and reinstall?
+- Can the server detect a manifest version bump (in Approach A, when the
+  JSON file changes on redeploy) and prompt the user to approve?
+- If an app adds `messages.send` permission in v2 that it didn't need in
+  v1, should the server auto-grant or require explicit user approval?
+- What about `webhookUrl` changes? Silent update or user confirmation?
+
+**Not urgent for Approach A** (you control all manifests and can manually
+handle updates). Becomes important the moment third-party apps exist.
+
+**Decision needed:** Before opening to third-party developers (Phase 3).
+
+---
+
+### config.updated webhook event
+
+**Context:** When a user changes an app's settings in the dashboard, the
+new values are stored in SQLite. The app reads them next time it calls
+`GET /api/config`. But if the app needs to react immediately (e.g., change
+summary schedule time), it has to poll.
+
+**Option:** Deliver a `config.updated` webhook event to the app whenever
+the user changes a setting. The payload includes the full updated config.
+
+**Trade-off:** Adds an event type and dispatch logic. But it's a small
+addition and prevents apps from having to poll for config changes.
+
+**Decision needed:** Before building the config API. Likely a "yes, include
+it" — low cost, high value.
+
+---
+
+## Resolved
+
+### App catalog: public page vs dashboard-only
+
+**Decided:** Split into two surfaces:
 - Public catalog page at `/catalog` (no auth) for browsing and discovery
 - Dashboard `/apps` (behind auth) for management of installed apps
-- "Install" on the public page redirects to dashboard with auth check
-
-**Decision needed:** Before building the installation UI. Mostly a routing
-and auth question, not a deep architecture one.
+- "Install" button on public page redirects to dashboard with auth check
 
 ---
 
