@@ -1,8 +1,7 @@
 # Group Metadata Caching
 
 > **Status:** Implemented (migration `0002_group-metadata-cache.ts`).
-> Remaining cache-DB synchronization bugs are tracked in
-> [`todos/cache-sync.md`](../todos/cache-sync.md).
+> Cache-DB synchronization fixes shipped in `fix/cache-sync` branch.
 
 ## Problem
 

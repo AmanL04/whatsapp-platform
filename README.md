@@ -223,4 +223,3 @@ Planned features with design docs:
 | **Server** | | |
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
 | [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
-| [Cache sync](todos/cache-sync.md) | Fix identity/group/chatNames cache-DB desync: missing updates, stale LID entries, startup gaps | Planned |

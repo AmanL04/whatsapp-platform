@@ -31,6 +31,7 @@ export class BaileysAdapter implements WAAdapter {
     // Load caches from DB
     loadIdentityCache(this.store.loadAllIdentities())
     this.loadGroupCacheFromDb()
+    this.loadChatNamesFromDb()
   }
 
   private loadGroupCacheFromDb() {
@@ -42,6 +43,24 @@ export class BaileysAdapter implements WAAdapter {
     if (groups.size > 0) {
       console.log(`[store] loaded ${groups.size} group metadata entries from DB`)
     }
+  }
+
+  private loadChatNamesFromDb() {
+    try {
+      const rows = this.store.getDb().prepare(
+        "SELECT id, name FROM chats WHERE name IS NOT NULL AND name != ''"
+      ).all() as { id: string; name: string }[]
+      let loaded = 0
+      for (const row of rows) {
+        if (!this.chatNames.has(row.id)) {
+          this.chatNames.set(row.id, row.name)
+          loaded++
+        }
+      }
+      if (loaded > 0) {
+        console.log(`[store] loaded ${loaded} chat names from DB`)
+      }
+    } catch { /* table may not exist on first run before migrations */ }
   }
 
   getStore(): SQLiteStore {
@@ -108,6 +127,10 @@ export class BaileysAdapter implements WAAdapter {
           this.chatNames.set(chatId, chat.name)
           this.store.upsertChat(chatId, chat.name, chatId.endsWith('@g.us'))
           this.dispatchEvent?.('chat.updated', { id: chatId, name: chat.name }, chatId, chatId.endsWith('@g.us'))
+          if (chatId.endsWith('@g.us')) {
+            const cached = this.groupCache.get(chatId)
+            if (cached) { this.groupCache.set(chatId, { ...cached, subject: chat.name }) }
+          }
         }
         if (typeof chat.unreadCount === 'number') {
           this.store.updateUnreadCount(chatId, chat.unreadCount)
@@ -123,6 +146,10 @@ export class BaileysAdapter implements WAAdapter {
           this.chatNames.set(chatId, update.name)
           this.store.upsertChat(chatId, update.name, chatId.endsWith('@g.us'))
           this.dispatchEvent?.('chat.updated', { id: chatId, name: update.name }, chatId, chatId.endsWith('@g.us'))
+          if (chatId.endsWith('@g.us')) {
+            const cached = this.groupCache.get(chatId)
+            if (cached) { this.groupCache.set(chatId, { ...cached, subject: update.name }) }
+          }
         }
         if (typeof update.unreadCount === 'number') {
           this.store.updateUnreadCount(chatId, update.unreadCount)
@@ -134,10 +161,11 @@ export class BaileysAdapter implements WAAdapter {
     this.sock.ev.on('contacts.upsert', (contacts) => {
       for (const contact of contacts) {
         const name = contact.notify || contact.verifiedName || contact.name || ''
-        if (contact.id && name) {
-          this.chatNames.set(contact.id, name)
-          if (!contact.id.endsWith('@g.us')) {
-            this.store.upsertChat(contact.id, name, false)
+        const contactId = contact.id ? resolveCanonicalJid(normalizeJid(contact.id)) : ''
+        if (contactId && name) {
+          this.chatNames.set(contactId, name)
+          if (!contactId.endsWith('@g.us')) {
+            this.store.upsertChat(contactId, name, false)
           }
         }
       }
@@ -146,10 +174,11 @@ export class BaileysAdapter implements WAAdapter {
     this.sock.ev.on('contacts.update', (updates) => {
       for (const contact of updates) {
         const name = contact.notify || contact.verifiedName || contact.name || ''
-        if (contact.id && name) {
-          this.chatNames.set(contact.id, name)
-          if (!contact.id.endsWith('@g.us')) {
-            this.store.upsertChat(contact.id, name, false)
+        const contactId = contact.id ? resolveCanonicalJid(normalizeJid(contact.id)) : ''
+        if (contactId && name) {
+          this.chatNames.set(contactId, name)
+          if (!contactId.endsWith('@g.us')) {
+            this.store.upsertChat(contactId, name, false)
           }
         }
       }
@@ -157,27 +186,44 @@ export class BaileysAdapter implements WAAdapter {
 
     this.sock.ev.on('groups.upsert', (groups) => {
       for (const group of groups) {
-        if (group.id && group.subject) {
-          this.chatNames.set(group.id, group.subject)
-          this.store.upsertChat(group.id, group.subject, true)
-          // Persist full metadata if participants available
+        const groupId = group.id ? normalizeJid(group.id) : ''
+        if (groupId && group.subject) {
+          this.chatNames.set(groupId, group.subject)
+          this.store.upsertChat(groupId, group.subject, true)
           if (group.participants) {
-            this.groupCache.set(group.id, { subject: group.subject, participants: group.participants })
-            this.store.updateGroupMetadata(group.id, group.subject, group.participants)
+            this.groupCache.set(groupId, { subject: group.subject, participants: group.participants })
+            this.store.updateGroupMetadata(groupId, group.subject, group.participants)
           }
         }
       }
     })
 
     this.sock.ev.on('group-participants.update', async ({ id }) => {
-      // Refresh full metadata on member changes — the event only tells us who changed, not the full list
       if (!this.sock) return
+      const groupId = normalizeJid(id)
       try {
-        const metadata = await this.sock.groupMetadata(id)
-        this.groupCache.set(id, { subject: metadata.subject, participants: metadata.participants })
-        this.store.updateGroupMetadata(id, metadata.subject, metadata.participants)
+        const metadata = await this.sock.groupMetadata(groupId)
+        this.groupCache.set(groupId, { subject: metadata.subject, participants: metadata.participants })
+        this.store.updateGroupMetadata(groupId, metadata.subject, metadata.participants)
+        this.chatNames.set(groupId, metadata.subject)
         this.extractIdentitiesFromParticipants(metadata.participants)
       } catch { /* non-critical */ }
+    })
+
+    this.sock.ev.on('groups.update', (updates) => {
+      for (const update of updates) {
+        if (!update.id) continue
+        const groupId = normalizeJid(update.id)
+        if (update.subject) {
+          this.chatNames.set(groupId, update.subject)
+          this.store.upsertChat(groupId, update.subject, true)
+          const cached = this.groupCache.get(groupId)
+          if (cached) {
+            this.groupCache.set(groupId, { ...cached, subject: update.subject })
+            this.store.updateGroupMetadata(groupId, update.subject, cached.participants)
+          }
+        }
+      }
     })
 
     // LID↔phone mappings from WhatsApp (most reliable source)
@@ -280,6 +326,9 @@ export class BaileysAdapter implements WAAdapter {
         const rawSenderId = normalizeJid(reaction.key?.participant ?? key.participant ?? '')
         const senderId = resolveCanonicalJid(rawSenderId)
         const senderName = this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || ''
+        if (senderName && senderId && !this.chatNames.has(senderId)) {
+          this.chatNames.set(senderId, senderName)
+        }
         const emoji = reaction.text ?? ''
 
         if (emoji) {
@@ -411,6 +460,7 @@ export class BaileysAdapter implements WAAdapter {
       if (oldChat) {
         this.store.getDb().prepare('DELETE FROM chats WHERE id = ?').run(oldJid)
       }
+      this.chatNames.delete(oldJid)
     } catch { /* non-critical — old data stays, queries still work via JOIN */ }
   }
 
@@ -470,8 +520,8 @@ export class BaileysAdapter implements WAAdapter {
           this.store.updateGroupMetadata(jid, metadata.subject, metadata.participants)
 
           for (const p of metadata.participants) {
-            const lid = p.lid || (p.id?.endsWith('@lid') ? p.id : null)
-            const pJid = p.jid
+            const lid = normalizeJid(p.lid || (p.id?.endsWith('@lid') ? p.id : null) || '')
+            const pJid = normalizeJid(p.jid || '')
             if (lid && pJid) allMappings.push({ lid, phoneJid: pJid })
           }
           await new Promise(resolve => setTimeout(resolve, 200))
@@ -493,8 +543,8 @@ export class BaileysAdapter implements WAAdapter {
   private extractIdentitiesFromParticipants(participants: any[]) {
     const mappings: { lid: string; phoneJid: string }[] = []
     for (const p of participants) {
-      const lid = p.lid || (p.id?.endsWith('@lid') ? p.id : null)
-      const pJid = p.jid
+      const lid = normalizeJid(p.lid || (p.id?.endsWith('@lid') ? p.id : null) || '')
+      const pJid = normalizeJid(p.jid || '')
       if (lid && pJid) mappings.push({ lid, phoneJid: pJid })
     }
     if (mappings.length > 0) this.extractIdentitiesFromMappings(mappings)
@@ -513,7 +563,7 @@ export class BaileysAdapter implements WAAdapter {
         this.store.upsertIdentity(phoneJid, phoneJid, name, nameSource)
         updateIdentityCache(lid, phoneJid)
         updateIdentityCache(phoneJid, phoneJid)
-        this.chatNames.set(lid, name)
+        this.chatNames.set(phoneJid, name)
 
         if (existingName) named++
       }
@@ -624,14 +674,18 @@ export class BaileysAdapter implements WAAdapter {
       if (rawSenderId !== senderId) {
         this.store.upsertIdentity(senderId, rawSenderId, raw.pushName, nameSource)
       }
-      // Update name across all aliases of this canonical
       this.store.updateIdentityName(senderId, raw.pushName, nameSource)
       this.chatNames.set(senderId, raw.pushName)
+      updateIdentityCache(senderId, senderId)
+      if (rawSenderId !== senderId) {
+        updateIdentityCache(rawSenderId, senderId)
+      }
     }
 
     // verifiedBizName as fallback
     if (raw.verifiedBizName && !raw.pushName && senderId) {
       this.store.upsertIdentity(senderId, senderId, raw.verifiedBizName, 'verifiedBizName')
+      updateIdentityCache(senderId, senderId)
     }
 
     return {
@@ -663,6 +717,9 @@ export class BaileysAdapter implements WAAdapter {
     const rawSenderId = normalizeJid(key.participant ?? (key.fromMe ? this.sock?.user?.id : '') ?? '')
     const senderId = rawSenderId ? resolveCanonicalJid(rawSenderId) : ''
     const senderName = senderId ? (this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || '') : ''
+    if (senderId && senderName && !this.chatNames.has(senderId)) {
+      this.chatNames.set(senderId, senderName)
+    }
     return { chatId, isGroup, senderId, senderName }
   }
 
