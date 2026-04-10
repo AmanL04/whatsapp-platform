@@ -3,6 +3,7 @@ export type EventName =
   | 'media.received'
   | 'message.sent'
   | 'message.reaction'
+  | 'message.edited'
   | 'chat.updated'
 
 export interface WebhookEnvelope {

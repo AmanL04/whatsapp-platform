@@ -11,6 +11,7 @@ export interface Message {
   isGroup: boolean
   groupName?: string
   replyTo?: string
+  editedAt?: Date
   reactions?: Reaction[]
   sentByAppId?: string
 }

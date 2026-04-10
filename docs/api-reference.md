@@ -329,6 +329,7 @@ if (request.headers['x-webhook-signature'] !== expected) reject
 | `message.sent` | Message from the account owner | Message object + `sentByYou` boolean |
 | `media.received` | Media message received | Message object (type != text) |
 | `message.reaction` | Emoji reaction added/removed | `{ messageId, chatId, senderId, senderName, emoji, action }` |
+| `message.edited` | Message content was edited | `{ messageId, chatId, senderId, senderName, oldContent, newContent, editedAt }` |
 | `chat.updated` | Chat metadata changed | `{ id, name }` |
 
 ### `sentByYou` field

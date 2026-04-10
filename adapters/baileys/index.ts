@@ -296,6 +296,45 @@ export class BaileysAdapter implements WAAdapter {
         }, chatId, isGroup)
       }
     })
+
+    // Edit events — update content when a message is edited
+    this.sock.ev.on('messages.update', (updates) => {
+      for (const { key, update } of updates) {
+        const editedMsg = (update as any).message?.editedMessage?.message
+        if (!editedMsg) continue
+
+        const originalMessageId = key.id
+        if (!originalMessageId) continue
+
+        const newContent = this.extractContent(editedMsg)
+
+        const chatId = resolveCanonicalJid(normalizeJid(key.remoteJid ?? ''))
+        const isGroup = chatId.endsWith('@g.us')
+        const editTimestamp = (update as any).messageTimestamp
+          ?? Math.floor(Date.now() / 1000)
+
+        const { oldContent, found } = this.store.editMessage(originalMessageId, newContent, editTimestamp)
+        if (!found) continue
+
+        const rawSenderId = normalizeJid(
+          key.participant ?? (key.fromMe ? this.sock?.user?.id : '') ?? ''
+        )
+        const senderId = rawSenderId ? resolveCanonicalJid(rawSenderId) : ''
+        const senderName = senderId
+          ? (this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || '')
+          : ''
+
+        this.dispatchEvent?.('message.edited', {
+          messageId: originalMessageId,
+          chatId,
+          senderId,
+          senderName,
+          oldContent,
+          newContent,
+          editedAt: new Date(editTimestamp * 1000).toISOString(),
+        }, chatId, isGroup)
+      }
+    })
   }
 
   disconnect(): Promise<void> {
@@ -543,12 +582,7 @@ export class BaileysAdapter implements WAAdapter {
       return null
     }
 
-    const content =
-      msg.conversation ||
-      msg.extendedTextMessage?.text ||
-      msg.imageMessage?.caption ||
-      msg.videoMessage?.caption ||
-      ''
+    const content = this.extractContent(msg)
     const type = this.resolveType(msg)
 
     // Skip text messages with no actual content (e.g. empty system notifications)
@@ -611,6 +645,14 @@ export class BaileysAdapter implements WAAdapter {
       isGroup,
       groupName,
     }
+  }
+
+  private extractContent(msg: any): string {
+    return msg.conversation ||
+      msg.extendedTextMessage?.text ||
+      msg.imageMessage?.caption ||
+      msg.videoMessage?.caption ||
+      ''
   }
 
   private resolveType(message: any): Message['type'] {
