@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-type Tab = 'overview' | 'messages' | 'media' | 'apps' | 'logs'
+type Tab = 'overview' | 'messages' | 'media' | 'apps' | 'logs' | 'mcp'
 
 const API = '/dashboard/api'
 const AUTH = '/dashboard/auth'
@@ -770,6 +770,49 @@ function LogsTab() {
   )
 }
 
+// ─── MCP ─────────────────────────────────────────────────────────────────────
+
+interface McpClient { clientId: string; clientName: string; registeredAt: string; activeTokens: number }
+
+function McpTab() {
+  const { data: clients, loading, refetch } = useFetch<McpClient[]>(`${API}/mcp-clients`)
+
+  if (loading) return <div className="p-8 text-[var(--text-tertiary)] font-medium">Loading...</div>
+
+  return (
+    <PageShell title="MCP Clients" actions={<RefreshBtn onClick={refetch} />} bg="var(--tab-logs)">
+      {!(clients ?? []).length ? (
+        <div className="flex flex-col items-center justify-center h-64 gap-4">
+          <div className="text-4xl">🤖</div>
+          <p className="text-lg font-bold text-[var(--text-tertiary)]">No MCP clients connected</p>
+          <p className="text-sm text-[var(--text-tertiary)] max-w-md text-center">Connect an AI assistant via <code className="font-mono bg-[var(--bg-inset)] px-2 py-0.5 rounded">claude mcp add --transport http whatsapp {'{url}'}/mcp</code></p>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {(clients ?? []).map(c => (
+            <BrutalCard key={c.clientId} className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-black text-sm text-[var(--text-primary)]">{c.clientName}</div>
+                  <div className="text-xs font-medium text-[var(--text-tertiary)] mt-1">
+                    Registered {new Date(c.registeredAt).toLocaleString()}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Chip variant={c.activeTokens > 0 ? 'teal' : 'amber'}>
+                    {c.activeTokens > 0 ? `${c.activeTokens} active` : 'no active tokens'}
+                  </Chip>
+                </div>
+              </div>
+              <div className="mt-2 text-xs font-mono text-[var(--text-tertiary)]">{c.clientId}</div>
+            </BrutalCard>
+          ))}
+        </div>
+      )}
+    </PageShell>
+  )
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string }[] = [
@@ -778,6 +821,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'media', label: 'Media' },
   { id: 'apps', label: 'Apps' },
   { id: 'logs', label: 'Logs' },
+  { id: 'mcp', label: 'MCP' },
 ]
 
 export default function App() {
@@ -825,6 +869,7 @@ export default function App() {
       {tab === 'media' && <MediaTab />}
       {tab === 'apps' && <AppsTab />}
       {tab === 'logs' && <LogsTab />}
+      {tab === 'mcp' && <McpTab />}
     </div>
   )
 }

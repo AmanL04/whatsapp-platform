@@ -145,6 +145,22 @@ export function createDashboardApiRouter(
     }
   })
 
+  router.get('/api/mcp-clients', (_req, res) => {
+    try {
+      const rows = store.getDb().prepare(
+        'SELECT c.client_id, c.client_id_issued_at, c.metadata, (SELECT COUNT(*) FROM mcp_tokens t WHERE t.client_id = c.client_id AND t.expires_at > ?) as active_tokens FROM mcp_clients c ORDER BY c.client_id_issued_at DESC'
+      ).all(Math.floor(Date.now() / 1000)) as any[]
+      res.json(rows.map(r => ({
+        clientId: r.client_id,
+        clientName: JSON.parse(r.metadata || '{}').client_name ?? r.client_id,
+        registeredAt: new Date(r.client_id_issued_at * 1000),
+        activeTokens: r.active_tokens,
+      })))
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
   // Existing data endpoints (for debug/viewer UI)
   router.get('/api/chats', async (req, res) => {
     try {

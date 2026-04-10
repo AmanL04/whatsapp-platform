@@ -35,6 +35,17 @@ Console for real-time, DB for historical queries + dashboard UI.
 
 Option C. Console logging is near-zero effort. DB logging adds visibility in the dashboard. Cleanup same pattern as `cleanOldDeliveries`.
 
+## Current state
+
+Basic MCP client visibility exists — dashboard MCP tab shows registered clients with active token counts. No request-level logging yet.
+
+## Enhancements (future)
+
+- Per-request logging: which MCP tools called, when, by which client
+- App API request logging: endpoint, app_id, timestamp, response status
+- Dashboard UI: timeline view of API/MCP usage
+- Cleanup cron for old log entries (same pattern as webhook deliveries)
+
 ## Status
 
-Deferred — ship MCP first, add observability after.
+Deferred — basic MCP client visibility shipped, full audit logging later.
