@@ -29,11 +29,12 @@ class SqliteClientStore implements OAuthRegisteredClientsStore {
   }
 
   registerClient(client: Omit<OAuthClientInformationFull, 'client_id' | 'client_id_issued_at'>): OAuthClientInformationFull {
-    const clientId = 'mcp_' + crypto.randomBytes(16).toString('hex')
+    const clientId = crypto.randomUUID()
     const clientSecret = crypto.randomBytes(32).toString('hex')
     const now = Math.floor(Date.now() / 1000)
 
-    const { redirect_uris, client_name, client_uri, grant_types, response_types, token_endpoint_auth_method, scope, ...rest } = client as any
+    // Strip client_id from metadata to avoid collision with our generated ID
+    const { client_id: _discardId, client_id_issued_at: _discardIssuedAt, redirect_uris, client_name, client_uri, grant_types, response_types, token_endpoint_auth_method, scope, ...rest } = client as any
     const metadata = JSON.stringify({ redirect_uris, client_name, client_uri, grant_types, response_types, token_endpoint_auth_method, scope, ...rest })
 
     this.db.prepare(

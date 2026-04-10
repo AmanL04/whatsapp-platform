@@ -249,3 +249,4 @@ Planned features with design docs:
 | **Server** | | |
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
 | [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
+| [Audit logging](todos/api-audit-logging.md) | Log MCP tool calls, app API requests, dashboard usage — console + DB + dashboard UI | Planned |

@@ -193,12 +193,17 @@ async function main() {
   })
 
   // MCP endpoint — protected by OAuth bearer token
-  const mcpServer = createMcpServer(adapter, store)
-  const mcpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
-  await mcpServer.connect(mcpTransport)
-
+  // Stateless mode: new server+transport per request (SDK requirement)
   app.all('/mcp', requireBearerAuth({ verifier: oauthProvider }), async (req, res) => {
-    await mcpTransport.handleRequest(req, res, req.body)
+    try {
+      const server = createMcpServer(adapter, store)
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
+      await server.connect(transport)
+      await transport.handleRequest(req, res, req.body)
+    } catch (err) {
+      console.error('[mcp] request error:', err)
+      if (!res.headersSent) res.status(500).json({ error: String(err) })
+    }
   })
 
   console.log('[mcp] MCP server mounted at /mcp (OAuth 2.1 protected)')
