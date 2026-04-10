@@ -12,7 +12,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 const reconnectFile = path.join(process.cwd(), 'data', '.reconnect')
-const healthUrl = `http://localhost:${process.env.PORT ?? 3100}/health`
+const healthUrl = `http://localhost:${process.env.PORT ?? 3111}/health`
 
 async function main() {
   // Check if server is running by hitting health endpoint

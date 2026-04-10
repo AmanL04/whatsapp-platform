@@ -102,6 +102,24 @@ Get messages, optionally filtered by chat.
 **Errors:**
 - `403` — `chatId` outside app's scope
 
+### GET /api/messages/:id/edits
+
+Get edit history for a message. Returns an array of previous content versions, newest first.
+
+**Permission:** `messages.read`
+
+**Response:**
+```json
+{
+  "data": [
+    { "oldContent": "original text before edit", "editedAt": "2026-04-11T12:00:00.000Z" },
+    { "oldContent": "even older version", "editedAt": "2026-04-11T11:55:00.000Z" }
+  ]
+}
+```
+
+Returns `{ "data": [] }` if the message has no edit history.
+
 ### GET /api/media
 
 Get media messages (type != text).
