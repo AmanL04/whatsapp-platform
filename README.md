@@ -128,27 +128,20 @@ npm run reconnect
 
 ### MCP Server (AI Assistants)
 
-Expose WhatsApp data to Claude, Cursor, or any MCP-compatible AI tool:
+Expose WhatsApp data to Claude, Cursor, or any MCP-compatible AI tool. See [docs/mcp-server.md](docs/mcp-server.md) for full setup guide.
 
+**Claude Code (recommended):**
+```bash
+claude mcp add --transport http whatsapp http://localhost:3111/mcp
+```
+On first use, browser opens for WhatsApp OTP login (OAuth 2.1). After authenticating, tools work immediately.
+
+**Standalone stdio** (Claude Desktop, local-only):
 ```bash
 npm run mcp
 ```
 
-Runs on stdio. Add to Claude Desktop config (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "whatsapp": {
-      "command": "npm",
-      "args": ["run", "mcp"],
-      "cwd": "/path/to/whatsapp"
-    }
-  }
-}
-```
-
-**Available tools:** `list_chats`, `get_messages`, `search_messages`, `get_media`, `get_chat_info`
+**Tools:** `list_chats`, `get_messages`, `search_messages`, `get_media`, `get_chat_info`, `send_message`
 
 ## Deploy to Railway
 
@@ -215,7 +208,8 @@ routes/
 cli/
   reconnect.ts              — emergency reconnect command
 mcp/
-  server.ts                 — MCP server (stdio transport, read-only tools for AI assistants)
+  server.ts                 — MCP server factory (shared between stdio + HTTP transports)
+  auth.ts                   — OAuth 2.1 provider (WhatsApp OTP login, token management)
 migrations/
   runner.ts                 — migration runner (sorted, transactional, idempotent)
   run.ts                    — standalone entry point (npm run migrate)
@@ -231,6 +225,7 @@ docs/
   open-questions.md             — unresolved design questions (app-to-user comms, naming, stress testing)
   app-publishing-approaches.md  — four publishing approaches (A-D) and settings ownership decision
   app-settings-design.md        — why apps own their settings (marketplace precedents, Option 1 vs 2)
+  mcp-server.md                  — MCP server setup, tools, auth, architecture
 todos/                      — planned feature specs
 dashboard/                  — Vite + React + Tailwind SPA
 ```
