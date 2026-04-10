@@ -201,6 +201,7 @@ docs/
   group-metadata-caching.md     — group metadata caching plan
   PITCH.md                      — pitch, marketplace strategy, launch phases
   competitive-landscape.md      — competitive analysis (OpenClaw, WAHA, Business API providers)
+  decisions-and-constraints.md  — architectural decisions and protocol-level constraints
 todos/                      — planned feature specs
 dashboard/                  — Vite + React + Tailwind SPA
 ```
