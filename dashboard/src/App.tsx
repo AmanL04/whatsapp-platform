@@ -9,7 +9,8 @@ const AUTH = '/dashboard/auth'
 
 interface Chat { id: string; name: string; isGroup: boolean; lastMessageAt: string; unreadCount: number }
 interface Reaction { messageId: string; senderId: string; senderName: string; emoji: string; timestamp: string }
-interface Message { id: string; chatId: string; senderName: string; content: string; type: string; mimeType?: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string; reactions?: Reaction[] }
+interface Message { id: string; chatId: string; senderName: string; content: string; type: string; mimeType?: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string; editedAt?: string; reactions?: Reaction[] }
+interface MessageEdit { oldContent: string; editedAt: string }
 interface AppRecord { id: string; name: string; description: string; webhookGlobalUrl: string; webhookSecret: string; webhookEvents: { name: string; url?: string }[]; apiKey: string; permissions: string[]; scopeChatTypes: string[]; scopeSpecificChats: string[]; active: boolean; createdAt: string }
 interface Delivery { id: string; app_id: string; event: string; payload: string; status: string; attempts: number; last_attempt_at: number; response_status: number; created_at: number }
 interface Stats { messages: number; chats: number; media: number; apps: number; deliveries: number }
@@ -62,6 +63,66 @@ function Linkify({ text, className }: { text: string; className?: string }) {
     ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:opacity-80">{p}</a>
     : p
   )}</span>
+}
+
+function EditHistory({ messageId, isFromMe, currentContent, timestamp }: { messageId: string; isFromMe: boolean; currentContent: string; timestamp: string }) {
+  const [edits, setEdits] = useState<MessageEdit[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [versionIndex, setVersionIndex] = useState(-1) // -1 = closed/current
+  const [direction, setDirection] = useState<'left' | 'right'>('right')
+
+  const open = async () => {
+    if (!edits) {
+      setLoading(true)
+      try {
+        const r = await apiFetch(`${API}/messages/${messageId}/edits`)
+        if (r.ok) {
+          const data = await r.json() as MessageEdit[]
+          setEdits(data)
+          if (data.length > 0) { setDirection('left'); setVersionIndex(0) }
+        }
+      } catch { /* handled by apiFetch */ }
+      setLoading(false)
+    } else {
+      setDirection('left'); setVersionIndex(0)
+    }
+  }
+
+  const close = () => setVersionIndex(-1)
+
+  const versions = edits ? [...edits.toReversed(), { oldContent: currentContent, editedAt: timestamp }] : []
+  const totalVersions = versions.length
+  const isActive = versionIndex >= 0 && versions.length > 0
+  const isCurrentVersion = versionIndex === totalVersions - 1
+  const displayContent = isActive ? versions[versionIndex]?.oldContent ?? currentContent : currentContent
+
+  const prev = () => { setDirection('left'); setVersionIndex((versionIndex - 1 + totalVersions) % totalVersions) }
+  const next = () => { setDirection('right'); setVersionIndex((versionIndex + 1) % totalVersions) }
+
+  const dimClass = isFromMe ? 'opacity-50' : 'text-[var(--text-tertiary)]'
+  const btnClass = `font-black cursor-pointer select-none ${isFromMe ? 'opacity-60 hover:opacity-100' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`
+  const slideClass = direction === 'left' ? 'animate-slide-left' : 'animate-slide-right'
+
+  return (
+    <>
+      <div key={versionIndex} className={`text-sm font-medium break-words ${isActive ? slideClass : ''}`}>{displayContent ? <Linkify text={displayContent} /> : '[empty]'}</div>
+      {isActive ? (
+        <div className="animate-in-fast flex items-center gap-2 mt-2 text-xs font-medium">
+          <button onClick={prev} className={btnClass}>←</button>
+          <span className={dimClass}>{isCurrentVersion ? 'Current' : `Version ${versionIndex + 1} of ${totalVersions} · ${new Date(versions[versionIndex].editedAt).toLocaleString()}`}</span>
+          <button onClick={next} className={btnClass}>→</button>
+          <button onClick={close} className={`${btnClass} ml-1`}>✕</button>
+        </div>
+      ) : (
+        <div className={`text-xs mt-2 font-medium ${dimClass}`}>
+          {new Date(timestamp).toLocaleTimeString()}
+          {loading ? <span className="ml-1 animate-fade">loading...</span> : (
+            <button onClick={open} className={`font-bold ml-1 underline underline-offset-2 cursor-pointer transition-opacity ${isFromMe ? 'opacity-70 hover:opacity-100' : 'hover:text-[var(--text-secondary)]'}`}>(edited)</button>
+          )}
+        </div>
+      )}
+    </>
+  )
 }
 
 // ─── Primitives ──────────────────────────────────────────────────────────────
@@ -370,8 +431,14 @@ function MessagesTab() {
                 <div key={m.id} className={`max-w-[60%] ${m.isFromMe ? 'ml-auto' : ''}`}>
                   <div className={`p-4 rounded-[var(--radius-lg)] border-2 border-[var(--border)] ${m.isFromMe ? 'bg-[var(--accent)] text-white shadow-[var(--shadow-brutal-sm)]' : 'bg-[var(--bg-surface)]'}`}>
                     {!m.isFromMe && <div className="font-black text-xs mb-1" style={{ color: 'var(--secondary)' }}>{m.senderName}</div>}
-                    <div className="text-sm font-medium break-words">{m.content ? <Linkify text={m.content} /> : `[${m.type}]`}</div>
-                    <div className={`text-xs mt-2 font-medium ${m.isFromMe ? 'opacity-70' : 'text-[var(--text-tertiary)]'}`}>{new Date(m.timestamp).toLocaleTimeString()}</div>
+                    {m.editedAt ? (
+                      <EditHistory messageId={m.id} isFromMe={m.isFromMe} currentContent={m.content} timestamp={m.timestamp} />
+                    ) : (
+                      <>
+                        <div className="text-sm font-medium break-words">{m.content ? <Linkify text={m.content} /> : `[${m.type}]`}</div>
+                        <div className={`text-xs mt-2 font-medium ${m.isFromMe ? 'opacity-70' : 'text-[var(--text-tertiary)]'}`}>{new Date(m.timestamp).toLocaleTimeString()}</div>
+                      </>
+                    )}
                   </div>
                   {m.reactions && m.reactions.length > 0 && (
                     <div className={`flex gap-1 mt-1 ${m.isFromMe ? 'justify-end' : ''}`}>
@@ -438,7 +505,7 @@ function MediaTab() {
 
 // ─── Apps ────────────────────────────────────────────────────────────────────
 
-const EVENTS = ['message.received', 'media.received', 'message.sent', 'message.reaction', 'chat.updated']
+const EVENTS = ['message.received', 'media.received', 'message.sent', 'message.reaction', 'message.edited', 'chat.updated']
 const PERMS = ['messages.read', 'chats.read', 'media.read', 'media.download', 'messages.send']
 
 function toggleInArray<T>(arr: T[], val: T): T[] {

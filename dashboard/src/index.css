@@ -127,6 +127,15 @@ body {
 }
 
 .animate-in { animation: fade-up 0.4s ease-out both; }
+.animate-in-fast { animation: fade-up 0.25s ease-out both; }
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.animate-fade { animation: fade-in 0.25s ease-out both; }
+
+@keyframes slide-from-left { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes slide-from-right { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+.animate-slide-left { animation: slide-from-left 0.15s ease-out both; }
+.animate-slide-right { animation: slide-from-right 0.15s ease-out both; }
 
 /* Stagger — sequential entrance */
 .stagger > * { opacity: 0; animation: fade-up 0.4s ease-out forwards; }

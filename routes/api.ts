@@ -76,6 +76,21 @@ export function createApiRouter(adapter: WAAdapter, store: SQLiteStore): Router 
     }
   })
 
+  // GET /api/messages/:id/edits — requires messages.read
+  router.get('/messages/:id/edits', (req, res) => {
+    const app = req.waApp!
+    if (!checkPermission(app, 'messages.read')) {
+      res.status(403).json({ error: 'Missing permission: messages.read' })
+      return
+    }
+    try {
+      const edits = store.getMessageEdits(req.params.id)
+      res.json({ data: edits })
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
   // GET /api/media — requires media.read
   router.get('/media', (_req, res) => {
     const app = _req.waApp!

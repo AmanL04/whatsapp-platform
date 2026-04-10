@@ -176,6 +176,15 @@ export function createDashboardApiRouter(
     }
   })
 
+  router.get('/api/messages/:id/edits', (req, res) => {
+    try {
+      const edits = store.getMessageEdits(req.params.id)
+      res.json(edits)
+    } catch (err) {
+      res.status(500).json({ error: String(err) })
+    }
+  })
+
   router.get('/api/media', (req, res) => {
     try {
       const type = req.query.type as string | undefined

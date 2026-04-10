@@ -119,6 +119,16 @@ export class SQLiteStore {
     return { oldContent: existing.content, found: true }
   }
 
+  getMessageEdits(messageId: string): { oldContent: string; editedAt: Date }[] {
+    const rows = this.db.prepare(
+      'SELECT old_content, edited_at FROM message_edits WHERE message_id = ? ORDER BY edited_at DESC'
+    ).all(messageId) as { old_content: string; edited_at: number }[]
+    return rows.map(row => ({
+      oldContent: row.old_content,
+      editedAt: new Date(row.edited_at * 1000),
+    }))
+  }
+
   preInsertSentMessage(msg: { id: string; chatId: string; content: string; sentByAppId: string; timestamp: number; isFromMe: boolean; isGroup: boolean }) {
     this.db.prepare(`
       INSERT INTO messages (id, chat_id, content, sent_by_app_id, timestamp, is_from_me, is_group, type)
