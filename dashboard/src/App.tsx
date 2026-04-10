@@ -57,6 +57,17 @@ function useFetch<T>(url: string) {
 
 const URL_RE = /(https?:\/\/[^\s<]+)/g
 
+function formatTimeRemaining(isoDate: string): string {
+  const diff = new Date(isoDate).getTime() - Date.now()
+  if (diff <= 0) return 'expired'
+  const mins = Math.floor(diff / 60000)
+  if (mins < 60) return `in ${mins}m`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `in ${hours}h ${mins % 60}m`
+  const days = Math.floor(hours / 24)
+  return `in ${days}d`
+}
+
 function Linkify({ text, className }: { text: string; className?: string }) {
   const parts = text.split(URL_RE)
   return <span className={className}>{parts.map((p, i) => URL_RE.test(p)
@@ -772,7 +783,7 @@ function LogsTab() {
 
 // ─── MCP ─────────────────────────────────────────────────────────────────────
 
-interface McpClient { clientId: string; clientName: string; registeredAt: string; activeTokens: number }
+interface McpClient { clientId: string; clientName: string; registeredAt: string; activeTokens: number; tokenExpiresAt: string | null }
 
 function McpTab() {
   const { data: clients, loading, refetch } = useFetch<McpClient[]>(`${API}/mcp-clients`)
@@ -799,6 +810,11 @@ function McpTab() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {c.tokenExpiresAt && c.activeTokens > 0 && (
+                    <span className="text-xs font-medium text-[var(--text-tertiary)]">
+                      expires {formatTimeRemaining(c.tokenExpiresAt)}
+                    </span>
+                  )}
                   <Chip variant={c.activeTokens > 0 ? 'teal' : 'amber'}>
                     {c.activeTokens > 0 ? `${c.activeTokens} active` : 'no active tokens'}
                   </Chip>
