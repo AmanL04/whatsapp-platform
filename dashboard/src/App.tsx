@@ -791,7 +791,7 @@ function McpTab() {
   if (loading) return <div className="p-8 text-[var(--text-tertiary)] font-medium">Loading...</div>
 
   return (
-    <PageShell title="MCP Clients" actions={<RefreshBtn onClick={refetch} />} bg="var(--tab-logs)">
+    <PageShell title="MCP Clients" actions={<RefreshBtn onClick={refetch} />} bg="var(--tab-mcp)">
       {!(clients ?? []).length ? (
         <div className="flex flex-col items-center justify-center h-64 gap-4">
           <div className="text-4xl">🤖</div>
