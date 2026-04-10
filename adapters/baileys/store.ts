@@ -129,6 +129,19 @@ export class SQLiteStore {
     }))
   }
 
+  softDeleteMessage(messageId: string): { content: string | null; editedAt: number | null; found: boolean } {
+    const existing = this.db.prepare(
+      'SELECT content, edited_at FROM messages WHERE id = ?'
+    ).get(messageId) as { content: string; edited_at: number | null } | undefined
+    if (!existing) return { content: null, editedAt: null, found: false }
+
+    this.db.prepare(
+      'UPDATE messages SET deleted_at = ? WHERE id = ?'
+    ).run(Math.floor(Date.now() / 1000), messageId)
+
+    return { content: existing.content, editedAt: existing.edited_at, found: true }
+  }
+
   preInsertSentMessage(msg: { id: string; chatId: string; content: string; sentByAppId: string; timestamp: number; isFromMe: boolean; isGroup: boolean }) {
     this.db.prepare(`
       INSERT INTO messages (id, chat_id, content, sent_by_app_id, timestamp, is_from_me, is_group, type)
@@ -142,7 +155,7 @@ export class SQLiteStore {
     return row?.sent_by_app_id ?? null
   }
 
-  private static readonly MSG_COLS = 'm.id, m.chat_id, m.sender_id, m.sender_name, m.content, m.type, m.mime_type, m.timestamp, m.is_from_me, m.is_group, m.group_name, m.reply_to, m.edited_at'
+  private static readonly MSG_COLS = 'm.id, m.chat_id, m.sender_id, m.sender_name, m.content, m.type, m.mime_type, m.timestamp, m.is_from_me, m.is_group, m.group_name, m.reply_to, m.edited_at, m.deleted_at'
 
   getMessages(query: MessageQuery): Message[] {
     let sql = `SELECT ${SQLiteStore.MSG_COLS},
@@ -641,6 +654,7 @@ export class SQLiteStore {
       groupName: row.is_group ? (row.resolved_group_name || row.group_name || undefined) : undefined,
       replyTo: row.reply_to ?? undefined,
       editedAt: row.edited_at ? new Date(row.edited_at * 1000) : undefined,
+      deletedAt: row.deleted_at ? new Date(row.deleted_at * 1000) : undefined,
     }
   }
 

@@ -12,6 +12,7 @@ export interface Message {
   groupName?: string
   replyTo?: string
   editedAt?: Date
+  deletedAt?: Date
   reactions?: Reaction[]
   sentByAppId?: string
 }

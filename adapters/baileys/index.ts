@@ -12,6 +12,8 @@ import type { Chat, Message, MessageQuery } from '../../core/types'
 import { normalizeJid, isLid, resolveCanonicalJid, loadIdentityCache, updateIdentityCache } from '../../core/jid'
 import { SQLiteStore } from './store'
 
+const STUB_TYPE_REVOKE = 1
+
 export class BaileysAdapter implements WAAdapter {
   private sock: WASocket | null = null
   private authDir: string
@@ -297,42 +299,42 @@ export class BaileysAdapter implements WAAdapter {
       }
     })
 
-    // Edit events — update content when a message is edited
+    // Edit + delete events via messages.update
     this.sock.ev.on('messages.update', (updates) => {
       for (const { key, update } of updates) {
+        const messageId = key.id
+        if (!messageId) continue
+
+        // Edit: protocolMessage.editedMessage
         const editedMsg = (update as any).message?.editedMessage?.message
-        if (!editedMsg) continue
+        if (editedMsg) {
+          const newContent = this.extractContent(editedMsg)
+          const editTimestamp = (update as any).messageTimestamp ?? Math.floor(Date.now() / 1000)
 
-        const originalMessageId = key.id
-        if (!originalMessageId) continue
+          const { oldContent, found } = this.store.editMessage(messageId, newContent, editTimestamp)
+          if (!found) continue
 
-        const newContent = this.extractContent(editedMsg)
+          const { chatId, isGroup, senderId, senderName } = this.resolveUpdateContext(key)
+          this.dispatchEvent?.('message.edited', {
+            messageId, chatId, senderId, senderName, oldContent, newContent,
+            editedAt: new Date(editTimestamp * 1000).toISOString(),
+          }, chatId, isGroup)
+          continue
+        }
 
-        const chatId = resolveCanonicalJid(normalizeJid(key.remoteJid ?? ''))
-        const isGroup = chatId.endsWith('@g.us')
-        const editTimestamp = (update as any).messageTimestamp
-          ?? Math.floor(Date.now() / 1000)
+        // Delete for everyone (REVOKE)
+        if ((update as any).messageStubType === STUB_TYPE_REVOKE) {
+          const { content, editedAt, found } = this.store.softDeleteMessage(messageId)
+          if (!found) continue
 
-        const { oldContent, found } = this.store.editMessage(originalMessageId, newContent, editTimestamp)
-        if (!found) continue
-
-        const rawSenderId = normalizeJid(
-          key.participant ?? (key.fromMe ? this.sock?.user?.id : '') ?? ''
-        )
-        const senderId = rawSenderId ? resolveCanonicalJid(rawSenderId) : ''
-        const senderName = senderId
-          ? (this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || '')
-          : ''
-
-        this.dispatchEvent?.('message.edited', {
-          messageId: originalMessageId,
-          chatId,
-          senderId,
-          senderName,
-          oldContent,
-          newContent,
-          editedAt: new Date(editTimestamp * 1000).toISOString(),
-        }, chatId, isGroup)
+          const { chatId, isGroup, senderId, senderName } = this.resolveUpdateContext(key)
+          this.dispatchEvent?.('message.deleted', {
+            messageId, chatId, senderId, senderName, content,
+            editedAt: editedAt ? new Date(editedAt * 1000).toISOString() : null,
+            deletedAt: new Date().toISOString(),
+          }, chatId, isGroup)
+          continue
+        }
       }
     })
   }
@@ -653,6 +655,15 @@ export class BaileysAdapter implements WAAdapter {
       msg.imageMessage?.caption ||
       msg.videoMessage?.caption ||
       ''
+  }
+
+  private resolveUpdateContext(key: any): { chatId: string; isGroup: boolean; senderId: string; senderName: string } {
+    const chatId = resolveCanonicalJid(normalizeJid(key.remoteJid ?? ''))
+    const isGroup = chatId.endsWith('@g.us')
+    const rawSenderId = normalizeJid(key.participant ?? (key.fromMe ? this.sock?.user?.id : '') ?? '')
+    const senderId = rawSenderId ? resolveCanonicalJid(rawSenderId) : ''
+    const senderName = senderId ? (this.store.resolveDisplayName(senderId) || this.chatNames.get(senderId) || '') : ''
+    return { chatId, isGroup, senderId, senderName }
   }
 
   private resolveType(message: any): Message['type'] {
