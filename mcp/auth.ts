@@ -205,7 +205,12 @@ export class WhatsAppOAuthProvider implements OAuthServerProvider {
     return { redirect: redirectUrl.toString() }
   }
 
+  private escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  }
+
   private renderAuthorizePage(requestId: string, clientName: string, state?: string): string {
+    const safeClientName = this.escapeHtml(clientName)
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -232,7 +237,7 @@ export class WhatsAppOAuthProvider implements OAuthServerProvider {
 <body>
   <div class="card">
     <h1>Connect to WA Companion</h1>
-    <p class="client"><strong>${clientName}</strong> wants to access your WhatsApp data.</p>
+    <p class="client"><strong>${safeClientName}</strong> wants to access your WhatsApp data.</p>
 
     <div id="step-otp">
       <button class="btn-primary" onclick="sendOtp()">Send OTP to WhatsApp</button>

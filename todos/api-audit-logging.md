@@ -45,6 +45,7 @@ Basic MCP client visibility exists — dashboard MCP tab shows registered client
 - App API request logging: endpoint, app_id, timestamp, response status
 - Dashboard UI: timeline view of API/MCP usage
 - Cleanup cron for old log entries (same pattern as webhook deliveries)
+- **Cleanup cron for expired OAuth data:** `mcp_auth_codes` (expired after 5 min) and `mcp_tokens` (expired access tokens after 1h, refresh tokens after 30d) accumulate stale rows. Add cleanup to the daily cron alongside `cleanOldDeliveries`.
 
 ## Status
 
