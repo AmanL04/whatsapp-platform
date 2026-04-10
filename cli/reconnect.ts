@@ -8,11 +8,12 @@
  *    saves auth, and exits. Next server start picks up the fresh auth.
  */
 
+import 'dotenv/config'
 import * as fs from 'fs'
 import * as path from 'path'
 
 const reconnectFile = path.join(process.cwd(), 'data', '.reconnect')
-const healthUrl = `http://localhost:${process.env.PORT ?? 3111}/health`
+const healthUrl = `http://localhost:${process.env.PORT}/health`
 
 async function main() {
   // Check if server is running by hitting health endpoint

@@ -84,6 +84,7 @@ Get messages, optionally filtered by chat.
       "groupName": "OTT ka OTP",
       "replyTo": null,
       "editedAt": null,
+      "deletedAt": null,
       "reactions": [
         {
           "messageId": "A5808E945D659F14",
