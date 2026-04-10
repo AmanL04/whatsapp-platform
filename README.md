@@ -1,6 +1,10 @@
 # WA Companion
 
-A self-hosted WhatsApp infrastructure server. Connect once, register external apps that receive events via webhooks and query data through a scoped REST API.
+A self-hosted WhatsApp infrastructure server that makes WhatsApp programmable. Connect once, and any external app can plug in — an AI chat summarizer, a media gallery, a task extractor, a business order tracker — without solving the WhatsApp connection problem itself.
+
+The server handles the hard part: authentication, message storage, reconnection, permissions, and event delivery. Apps register once, declare what they need, and receive scoped events via webhooks + a REST API. The server enforces boundaries. Apps just build features.
+
+**What people build on it:** AI-powered daily chat summaries, full-text search across all chats, task extraction from conversations, voice note transcription, media galleries with keep/discard workflows, business order trackers, lead scoring, community onboarding bots, and more. See [`docs/PITCH.md`](docs/PITCH.md) for the full vision and marketplace strategy.
 
 ```
 WhatsApp (your personal account)
@@ -192,8 +196,11 @@ migrations/
   0001_initial-schema.ts    — all tables + indexes
   0002_group-metadata-cache.ts — group participants + staleness columns
 docs/
-  identity-resolution.md    — WhatsApp JID/LID identity resolution design
-  group-metadata-caching.md — group metadata caching plan
+  api-reference.md              — full API docs for all endpoints
+  identity-resolution.md        — WhatsApp JID/LID identity resolution design
+  group-metadata-caching.md     — group metadata caching plan
+  PITCH.md                      — pitch, marketplace strategy, launch phases
+  competitive-landscape.md      — competitive analysis (OpenClaw, WAHA, Business API providers)
 todos/                      — planned feature specs
 dashboard/                  — Vite + React + Tailwind SPA
 ```
@@ -204,6 +211,11 @@ Planned features with design docs:
 
 | Feature | Plan | Status |
 |---|---|---|
+| **Platform** | | |
+| [MCP server](todos/mcp-server.md) | Expose chats, messages, media, search as MCP tools for AI assistants (Claude, Cursor, etc.) | Planned |
+| [App installation](todos/app-installation.md) | App manifest format, install/uninstall flow, config storage, catalog UI in dashboard | Planned |
+| [First-party apps](todos/first-party-apps.md) | 6 external apps (Summary, Search, Tasks, Voice Transcribe, Media Recap, Read Later) using the webhook+API system | Planned |
+| **Server** | | |
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
 | [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
 | [API reference](todos/api-reference.md) | Full docs for all endpoints: params, request/response shapes, errors | [Done](docs/api-reference.md) |
