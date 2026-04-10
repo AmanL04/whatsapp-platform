@@ -14,6 +14,23 @@ These are two different workflows for two different people:
 - Registration = developer-side ("I built an app, connect it to the API")
 - Installation = user-side ("I found an app, make it work on my data")
 
+## Build Order
+
+1. **MCP server** — self-contained, no dependency on installation system
+2. **Convert OTT ka OTP** — already running in prod on webhook + API.
+   Write its manifest, build the installation system (Approach A: static
+   manifests in repo) with OTT ka OTP as the real test case
+3. **Build Daily Summary** — second app through the manifest flow,
+   validates the pattern works for a different app shape
+4. **Remaining first-party apps** — pattern is established, each one
+   is faster
+
+The rationale: OTT ka OTP already exists as a production external app.
+No need to build multiple apps before designing the installation system —
+a real app grounds the design in reality instead of theory. Building the
+installation system early means every subsequent app goes through the
+proper flow from day one.
+
 ## App Manifest Format
 
 Each app publishes a manifest (JSON) that describes what it needs:

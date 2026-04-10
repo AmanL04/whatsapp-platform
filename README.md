@@ -203,6 +203,7 @@ docs/
   competitive-landscape.md      — competitive analysis (OpenClaw, WAHA, Business API providers)
   decisions-and-constraints.md  — architectural decisions and protocol-level constraints
   open-questions.md             — unresolved design questions (app-to-user comms, naming, stress testing)
+  app-publishing-approaches.md  — four publishing approaches (A-D), app config storage and schema evolution
 todos/                      — planned feature specs
 dashboard/                  — Vite + React + Tailwind SPA
 ```
@@ -216,6 +217,7 @@ Planned features with design docs:
 | **Platform** | | |
 | [MCP server](todos/mcp-server.md) | Expose chats, messages, media, search as MCP tools for AI assistants (Claude, Cursor, etc.) | Planned |
 | [App installation](todos/app-installation.md) | App manifest format, install/uninstall flow, config storage, catalog UI in dashboard | Planned |
+| [App publishing](todos/app-publishing.md) | Approach A implementation: static manifests in `catalog/`, install/uninstall endpoints, config API | Planned |
 | [First-party apps](todos/first-party-apps.md) | 6 external apps (Summary, Search, Tasks, Voice Transcribe, Media Recap, Read Later) using the webhook+API system | Planned |
 | [Update CLAUDE.md](todos/update-claude-md.md) | Refresh Claude Code context file with current state, new focus areas, and doc pointers | Planned |
 | **Server** | | |
