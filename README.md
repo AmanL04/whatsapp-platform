@@ -92,7 +92,7 @@ GET  /api/media/:id/download       — download media file (media.download)
 POST /api/messages/send            — send a message (messages.send)
 ```
 
-Out-of-scope requests return `403`.
+Out-of-scope requests return `403`. See [API Reference](docs/api-reference.md) for full endpoint documentation.
 
 ### Dashboard
 
@@ -224,10 +224,3 @@ Planned features with design docs:
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
 | [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
 | [Cache sync](todos/cache-sync.md) | Fix identity/group/chatNames cache-DB desync: missing updates, stale LID entries, startup gaps | Planned |
-
-### Completed
-
-| Feature | Docs | Description |
-|---|---|---|
-| API reference | [docs/api-reference.md](docs/api-reference.md) | Full docs for all endpoints: params, request/response shapes, errors |
-| API sent tracking | — | Track which app sent each API message, expose `sentByYou` in webhooks to prevent bot loops |
