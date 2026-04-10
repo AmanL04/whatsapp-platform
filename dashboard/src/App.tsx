@@ -438,24 +438,93 @@ function MediaTab() {
 
 // ─── Apps ────────────────────────────────────────────────────────────────────
 
-const EVENTS = ['message.received', 'media.received', 'message.sent', 'chat.updated']
+const EVENTS = ['message.received', 'media.received', 'message.sent', 'message.reaction', 'chat.updated']
 const PERMS = ['messages.read', 'chats.read', 'media.read', 'media.download', 'messages.send']
+
+function toggleInArray<T>(arr: T[], val: T): T[] {
+  return arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val]
+}
+
+function ChatPicker({ selected, onChange, scopeChatTypes }: { selected: string[]; onChange: (v: string[]) => void; scopeChatTypes: string[] }) {
+  const { data: chats } = useFetch<Chat[]>(`${API}/chats?limit=200`)
+  const [open, setOpen] = useState(selected.length > 0)
+  const [search, setSearch] = useState('')
+  const filtered = (chats ?? [])
+    .filter(c => scopeChatTypes.includes(c.isGroup ? 'group' : 'dm'))
+    .filter(c => !search || (c.name || c.id).toLowerCase().includes(search.toLowerCase()) || c.id.toLowerCase().includes(search.toLowerCase()))
+
+  useEffect(() => {
+    if (!chats || selected.length === 0) return
+    const chatMap = new Map(chats.map(c => [c.id, c]))
+    const pruned = selected.filter(id => { const c = chatMap.get(id); return c && scopeChatTypes.includes(c.isGroup ? 'group' : 'dm') })
+    if (pruned.length !== selected.length) onChange(pruned)
+  }, [chats, selected, scopeChatTypes, onChange])
+
+  return (
+    <div>
+      <button type="button" onClick={() => { if (open) { onChange([]); } setOpen(!open) }} className="text-xs font-bold text-[var(--accent)] hover:underline">
+        {open ? 'Remove chat restrictions' : 'Restrict to specific chats'}
+        {selected.length > 0 && ` (${selected.length} selected)`}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search chats..." className="!py-2 !text-xs" />
+          <div className="max-h-48 overflow-y-auto space-y-1 border-2 border-[var(--border)] rounded-[var(--radius-md)] p-2">
+            {!chats ? <p className="text-xs text-[var(--text-tertiary)]">Loading...</p>
+              : filtered.length === 0 ? <p className="text-xs text-[var(--text-tertiary)]">No chats match</p>
+              : filtered.map(c => (
+                <button key={c.id} type="button" onClick={() => onChange(toggleInArray(selected, c.id))}
+                  className={`w-full text-left px-3 py-2 rounded-[var(--radius-sm)] text-xs font-medium transition-all flex items-center gap-2 ${selected.includes(c.id) ? 'bg-[var(--accent)] text-[var(--text-inverse)] brutal-sm' : 'hover:bg-[var(--bg-inset)]'}`}>
+                  <span className={`shrink-0 text-[10px] font-black uppercase px-1.5 py-0.5 rounded border border-current ${selected.includes(c.id) ? 'opacity-80' : 'text-[var(--text-tertiary)]'}`}>{c.isGroup ? 'G' : 'DM'}</span>
+                  <span className="truncate">{c.name}</span>
+                </button>
+              ))}
+          </div>
+          {selected.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {selected.map(id => {
+                const chat = (chats ?? []).find(c => c.id === id)
+                return <span key={id} className="inline-flex items-center gap-1 px-2 py-1 rounded-[var(--radius-full)] text-[10px] font-bold bg-[var(--bg-inset)] border border-[var(--border)]">
+                  {chat?.name ?? id}
+                  <button type="button" onClick={() => onChange(toggleInArray(selected, id))} className="hover:text-[var(--accent)]">&times;</button>
+                </span>
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WebhookWarning() {
+  return (
+    <p className="text-xs font-bold text-[var(--card-amber)] border-2 border-[var(--card-amber)] rounded-[var(--radius-md)] px-3 py-2">
+      Events selected without a webhook URL — deliveries will fail until one is added.
+    </p>
+  )
+}
 
 function AppEditForm({ app, onSave, onCancel }: { app: AppRecord; onSave: () => void; onCancel: () => void }) {
   const [wu, setWu] = useState(app.webhookGlobalUrl)
   const [ev, setEv] = useState<string[]>(app.webhookEvents.map(e => e.name))
   const [pm, setPm] = useState<string[]>(app.permissions)
   const [sc, setSc] = useState<string[]>(app.scopeChatTypes)
+  const [spc, setSpc] = useState<string[]>(app.scopeSpecificChats)
   const [saving, setSaving] = useState(false)
-  const t = (a: string[], v: string, s: (x: string[]) => void) => s(a.includes(v) ? a.filter(i => i !== v) : [...a, v])
-  const save = async () => { setSaving(true); await apiFetch(`${API}/apps/${app.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ webhookGlobalUrl: wu, webhookEvents: ev.map(e => ({ name: e })), permissions: pm, scopeChatTypes: sc }) }).catch(() => {}); setSaving(false); onSave() }
+  const save = async () => { setSaving(true); await apiFetch(`${API}/apps/${app.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ webhookGlobalUrl: wu, webhookEvents: ev.map(e => ({ name: e })), permissions: pm, scopeChatTypes: sc, scopeSpecificChats: spc }) }).catch(() => {}); setSaving(false); onSave() }
 
   return (
     <div className="mt-5 pt-5 border-t-2 border-[var(--border)] space-y-4 animate-in">
       <Input value={wu} onChange={e => setWu(e.target.value)} placeholder="Webhook URL" />
-      <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Events</p><div className="flex flex-wrap gap-2">{EVENTS.map(e => <Pill key={e} active={ev.includes(e)} onClick={() => t(ev, e, setEv)}>{e}</Pill>)}</div></div>
-      <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Permissions</p><div className="flex flex-wrap gap-2">{PERMS.map(p => <Pill key={p} active={pm.includes(p)} onClick={() => t(pm, p, setPm)} color="var(--secondary)">{p}</Pill>)}</div></div>
-      <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Scope</p><div className="flex gap-2">{['dm', 'group'].map(s => <Pill key={s} active={sc.includes(s)} onClick={() => t(sc, s, setSc)}>{s}</Pill>)}</div></div>
+      {ev.length > 0 && !wu && <WebhookWarning />}
+      <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Events</p><div className="flex flex-wrap gap-2">{EVENTS.map(e => <Pill key={e} active={ev.includes(e)} onClick={() => setEv(toggleInArray(ev, e))}>{e}</Pill>)}</div></div>
+      <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Permissions</p><div className="flex flex-wrap gap-2">{PERMS.map(p => <Pill key={p} active={pm.includes(p)} onClick={() => setPm(toggleInArray(pm, p))} color="var(--secondary)">{p}</Pill>)}</div></div>
+      <div>
+        <p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Scope</p>
+        <div className="flex gap-2 mb-3">{['dm', 'group'].map(s => <Pill key={s} active={sc.includes(s)} onClick={() => setSc(toggleInArray(sc, s))}>{s}</Pill>)}</div>
+        <ChatPicker selected={spc} onChange={setSpc} scopeChatTypes={sc} />
+      </div>
       <div className="flex gap-3">
         <BrutalBtn onClick={save} disabled={saving} className="bg-[var(--accent)] text-[var(--text-inverse)]">{saving ? 'Saving...' : 'Save'}</BrutalBtn>
         <BrutalBtn onClick={onCancel} className="bg-[var(--bg-inset)]">Cancel</BrutalBtn>
@@ -470,12 +539,11 @@ function AppsTab() {
   const [created, setCreated] = useState<AppRecord | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [name, setName] = useState(''); const [desc, setDesc] = useState(''); const [wu, setWu] = useState('')
-  const [ev, setEv] = useState<string[]>([]); const [pm, setPm] = useState<string[]>([]); const [sc, setSc] = useState<string[]>(['dm', 'group'])
-  const t = (a: string[], v: string, s: (x: string[]) => void) => s(a.includes(v) ? a.filter(i => i !== v) : [...a, v])
+  const [ev, setEv] = useState<string[]>([]); const [pm, setPm] = useState<string[]>([]); const [sc, setSc] = useState<string[]>(['dm', 'group']); const [spc, setSpc] = useState<string[]>([])
 
   const createApp = async () => {
-    try { const r = await apiFetch(`${API}/apps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, webhookGlobalUrl: wu || undefined, webhookEvents: ev.length ? ev.map(e => ({ name: e })) : undefined, permissions: pm, scopeChatTypes: sc, scopeSpecificChats: [] }) })
-      if (r.ok) { const a = await r.json(); setCreated(a); setShowForm(false); setName(''); setDesc(''); setWu(''); setEv([]); setPm([]); refetch() }
+    try { const r = await apiFetch(`${API}/apps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc, webhookGlobalUrl: wu || undefined, webhookEvents: ev.length ? ev.map(e => ({ name: e })) : undefined, permissions: pm, scopeChatTypes: sc, scopeSpecificChats: spc }) })
+      if (r.ok) { const a = await r.json(); setCreated(a); setShowForm(false); setName(''); setDesc(''); setWu(''); setEv([]); setPm([]); setSpc([]); refetch() }
     } catch { /* 401 handled by apiFetch */ }
   }
   const deactivate = async (id: string) => { await apiFetch(`${API}/apps/${id}`, { method: 'DELETE' }).catch(() => {}); refetch() }
@@ -508,10 +576,15 @@ function AppsTab() {
           <Input value={name} onChange={e => setName(e.target.value)} placeholder="App name" />
           <Input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Description (optional)" />
           <Input value={wu} onChange={e => setWu(e.target.value)} placeholder="Webhook URL (optional for API-only)" />
-          <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Events</p><div className="flex flex-wrap gap-2">{EVENTS.map(e => <Pill key={e} active={ev.includes(e)} onClick={() => t(ev, e, setEv)}>{e}</Pill>)}</div></div>
-          <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Permissions</p><div className="flex flex-wrap gap-2">{PERMS.map(p => <Pill key={p} active={pm.includes(p)} onClick={() => t(pm, p, setPm)} color="var(--secondary)">{p}</Pill>)}</div></div>
-          <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Scope</p><div className="flex gap-2">{['dm', 'group'].map(s => <Pill key={s} active={sc.includes(s)} onClick={() => t(sc, s, setSc)}>{s}</Pill>)}</div></div>
-          <BrutalBtn onClick={createApp} disabled={!name || (ev.length > 0 && !wu)} className="w-full py-4 text-base bg-[var(--accent)] text-[var(--text-inverse)]">Register</BrutalBtn>
+          {ev.length > 0 && !wu && <WebhookWarning />}
+          <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Events</p><div className="flex flex-wrap gap-2">{EVENTS.map(e => <Pill key={e} active={ev.includes(e)} onClick={() => setEv(toggleInArray(ev, e))}>{e}</Pill>)}</div></div>
+          <div><p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Permissions</p><div className="flex flex-wrap gap-2">{PERMS.map(p => <Pill key={p} active={pm.includes(p)} onClick={() => setPm(toggleInArray(pm, p))} color="var(--secondary)">{p}</Pill>)}</div></div>
+          <div>
+            <p className="text-xs font-black text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Scope</p>
+            <div className="flex gap-2 mb-3">{['dm', 'group'].map(s => <Pill key={s} active={sc.includes(s)} onClick={() => setSc(toggleInArray(sc, s))}>{s}</Pill>)}</div>
+            <ChatPicker selected={spc} onChange={setSpc} scopeChatTypes={sc} />
+          </div>
+          <BrutalBtn onClick={createApp} disabled={!name} className="w-full py-4 text-base bg-[var(--accent)] text-[var(--text-inverse)]">Register</BrutalBtn>
         </BrutalCard>
       )}
 
@@ -532,7 +605,7 @@ function AppsTab() {
               {a.webhookEvents.map((e: { name: string }) => <Chip key={e.name} variant="amber">{e.name}</Chip>)}
               {a.permissions.map(p => <Chip key={p} variant="teal">{p}</Chip>)}
             </div>
-            <div className="mt-2 text-xs font-mono font-medium text-[var(--text-tertiary)]">Key: {a.apiKey} &middot; Scope: {a.scopeChatTypes.join(', ')}</div>
+            <div className="mt-2 text-xs font-mono font-medium text-[var(--text-tertiary)]">Key: {a.apiKey} &middot; Scope: {a.scopeChatTypes.join(', ')}{a.scopeSpecificChats.length > 0 && ` (${a.scopeSpecificChats.length} specific chat${a.scopeSpecificChats.length > 1 ? 's' : ''})`}</div>
             {editId === a.id && <AppEditForm app={a} onSave={() => { setEditId(null); refetch() }} onCancel={() => setEditId(null)} />}
           </BrutalCard>
         ))}
