@@ -9,7 +9,7 @@ const AUTH = '/dashboard/auth'
 
 interface Chat { id: string; name: string; isGroup: boolean; lastMessageAt: string; unreadCount: number }
 interface Reaction { messageId: string; senderId: string; senderName: string; emoji: string; timestamp: string }
-interface Message { id: string; chatId: string; senderName: string; content: string; type: string; mimeType?: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string; editedAt?: string; reactions?: Reaction[] }
+interface Message { id: string; chatId: string; senderName: string; content: string; type: string; mimeType?: string; timestamp: string; isFromMe: boolean; isGroup: boolean; groupName?: string; editedAt?: string; deletedAt?: string; reactions?: Reaction[] }
 interface MessageEdit { oldContent: string; editedAt: string }
 interface AppRecord { id: string; name: string; description: string; webhookGlobalUrl: string; webhookSecret: string; webhookEvents: { name: string; url?: string }[]; apiKey: string; permissions: string[]; scopeChatTypes: string[]; scopeSpecificChats: string[]; active: boolean; createdAt: string }
 interface Delivery { id: string; app_id: string; event: string; payload: string; status: string; attempts: number; last_attempt_at: number; response_status: number; created_at: number }
@@ -65,7 +65,15 @@ function Linkify({ text, className }: { text: string; className?: string }) {
   )}</span>
 }
 
-function EditHistory({ messageId, isFromMe, currentContent, timestamp }: { messageId: string; isFromMe: boolean; currentContent: string; timestamp: string }) {
+function useMessageStyles(isFromMe: boolean) {
+  return {
+    dimClass: isFromMe ? 'text-white/60' : 'text-[var(--text-tertiary)]',
+    btnClass: `font-bold cursor-pointer select-none ${isFromMe ? 'text-white/70 hover:text-white' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`,
+    linkClass: `underline underline-offset-2 cursor-pointer ${isFromMe ? 'text-white/70 hover:text-white' : 'hover:text-[var(--text-secondary)]'}`,
+  }
+}
+
+function EditHistory({ messageId, isFromMe, currentContent, timestamp, suffix, activeSuffix }: { messageId: string; isFromMe: boolean; currentContent: string; timestamp: string; suffix?: React.ReactNode; activeSuffix?: React.ReactNode }) {
   const [edits, setEdits] = useState<MessageEdit[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [versionIndex, setVersionIndex] = useState(-1) // -1 = closed/current
@@ -99,29 +107,65 @@ function EditHistory({ messageId, isFromMe, currentContent, timestamp }: { messa
   const prev = () => { setDirection('left'); setVersionIndex((versionIndex - 1 + totalVersions) % totalVersions) }
   const next = () => { setDirection('right'); setVersionIndex((versionIndex + 1) % totalVersions) }
 
-  const dimClass = isFromMe ? 'opacity-50' : 'text-[var(--text-tertiary)]'
-  const btnClass = `font-black cursor-pointer select-none ${isFromMe ? 'opacity-60 hover:opacity-100' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`
+  const { dimClass, btnClass, linkClass } = useMessageStyles(isFromMe)
   const slideClass = direction === 'left' ? 'animate-slide-left' : 'animate-slide-right'
 
   return (
     <>
       <div key={versionIndex} className={`text-sm font-medium break-words ${isActive ? slideClass : ''}`}>{displayContent ? <Linkify text={displayContent} /> : '[empty]'}</div>
       {isActive ? (
-        <div className="animate-in-fast flex items-center gap-2 mt-2 text-xs font-medium">
+        <div className={`animate-in-fast flex items-center gap-2 mt-2 text-xs font-medium ${dimClass}`}>
           <button onClick={prev} className={btnClass}>←</button>
-          <span className={dimClass}>{isCurrentVersion ? 'Current' : `Version ${versionIndex + 1} of ${totalVersions} · ${new Date(versions[versionIndex].editedAt).toLocaleString()}`}</span>
+          <span>{isCurrentVersion ? 'Current' : `Version ${versionIndex + 1} of ${totalVersions} · ${new Date(versions[versionIndex].editedAt).toLocaleString()}`}</span>
           <button onClick={next} className={btnClass}>→</button>
           <button onClick={close} className={`${btnClass} ml-1`}>✕</button>
+          {activeSuffix ?? suffix}
         </div>
       ) : (
         <div className={`text-xs mt-2 font-medium ${dimClass}`}>
           {new Date(timestamp).toLocaleTimeString()}
           {loading ? <span className="ml-1 animate-fade">loading...</span> : (
-            <button onClick={open} className={`font-bold ml-1 underline underline-offset-2 cursor-pointer transition-opacity ${isFromMe ? 'opacity-70 hover:opacity-100' : 'hover:text-[var(--text-secondary)]'}`}>(edited)</button>
+            <><span className="mx-1">·</span><button onClick={open} className={linkClass}>(edited)</button></>
           )}
+          {suffix}
         </div>
       )}
     </>
+  )
+}
+
+function DeletedMessage({ message: m, isFromMe }: { message: Message; isFromMe: boolean }) {
+  const [revealed, setRevealed] = useState(false)
+  const { dimClass, linkClass } = useMessageStyles(isFromMe)
+
+  if (!revealed) {
+    return (
+      <div className={`text-xs font-medium ${dimClass}`}>
+        <span>🚫 This message was deleted</span>
+        <span className="mx-1">·</span>
+        <button onClick={() => setRevealed(true)} className={linkClass}>(reveal)</button>
+      </div>
+    )
+  }
+
+  const hideBtn = <button onClick={() => setRevealed(false)} className={linkClass}>(hide)</button>
+  const hideSuffixWithDot = <><span className="mx-1">·</span>{hideBtn}</>
+  const hideSuffixNoDot = <span className="ml-2">{hideBtn}</span>
+
+  return (
+    <div className="animate-fade">
+      {m.editedAt ? (
+        <EditHistory messageId={m.id} isFromMe={isFromMe} currentContent={m.content} timestamp={m.timestamp} suffix={hideSuffixWithDot} activeSuffix={hideSuffixNoDot} />
+      ) : (
+        <>
+          <div className="text-sm font-medium break-words">{m.content ? <Linkify text={m.content} /> : `[${m.type}]`}</div>
+          <div className={`text-xs mt-2 font-medium ${dimClass}`}>
+            {new Date(m.timestamp).toLocaleTimeString()}
+            <span className="mx-1">·</span>{hideBtn}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -431,12 +475,14 @@ function MessagesTab() {
                 <div key={m.id} className={`max-w-[60%] ${m.isFromMe ? 'ml-auto' : ''}`}>
                   <div className={`p-4 rounded-[var(--radius-lg)] border-2 border-[var(--border)] ${m.isFromMe ? 'bg-[var(--accent)] text-white shadow-[var(--shadow-brutal-sm)]' : 'bg-[var(--bg-surface)]'}`}>
                     {!m.isFromMe && <div className="font-black text-xs mb-1" style={{ color: 'var(--secondary)' }}>{m.senderName}</div>}
-                    {m.editedAt ? (
+                    {m.deletedAt ? (
+                      <DeletedMessage message={m} isFromMe={m.isFromMe} />
+                    ) : m.editedAt ? (
                       <EditHistory messageId={m.id} isFromMe={m.isFromMe} currentContent={m.content} timestamp={m.timestamp} />
                     ) : (
                       <>
                         <div className="text-sm font-medium break-words">{m.content ? <Linkify text={m.content} /> : `[${m.type}]`}</div>
-                        <div className={`text-xs mt-2 font-medium ${m.isFromMe ? 'opacity-70' : 'text-[var(--text-tertiary)]'}`}>{new Date(m.timestamp).toLocaleTimeString()}</div>
+                        <div className={`text-xs mt-2 font-medium ${m.isFromMe ? 'text-white/60' : 'text-[var(--text-tertiary)]'}`}>{new Date(m.timestamp).toLocaleTimeString()}</div>
                       </>
                     )}
                   </div>
@@ -505,7 +551,7 @@ function MediaTab() {
 
 // ─── Apps ────────────────────────────────────────────────────────────────────
 
-const EVENTS = ['message.received', 'media.received', 'message.sent', 'message.reaction', 'message.edited', 'chat.updated']
+const EVENTS = ['message.received', 'media.received', 'message.sent', 'message.reaction', 'message.edited', 'message.deleted', 'chat.updated']
 const PERMS = ['messages.read', 'chats.read', 'media.read', 'media.download', 'messages.send']
 
 function toggleInArray<T>(arr: T[], val: T): T[] {
