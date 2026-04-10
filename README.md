@@ -217,14 +217,18 @@ Planned features with design docs:
 |---|---|---|
 | **Platform** | | |
 | [MCP server](todos/mcp-server.md) | Expose chats, messages, media, search as MCP tools for AI assistants (Claude, Cursor, etc.) | Planned |
-| [App installation](todos/app-installation.md) | App manifest format, install/uninstall flow, config storage, catalog UI in dashboard | Planned |
-| [App publishing](todos/app-publishing.md) | Approach A implementation: static manifests in `catalog/`, install/uninstall endpoints, config API | Planned |
+| [App catalog & installation](todos/app-publishing.md) | Manifest format, catalog loader, install/uninstall flow, dashboard catalog UI (Approach A) | Planned |
 | [First-party apps](todos/first-party-apps.md) | 6 external apps (Summary, Search, Tasks, Voice Transcribe, Media Recap, Read Later) using the webhook+API system | Planned |
 | [Update CLAUDE.md](todos/update-claude-md.md) | Refresh Claude Code context file with current state, new focus areas, and doc pointers | Planned |
 | **Server** | | |
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
 | [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
-| [API reference](todos/api-reference.md) | Full docs for all endpoints: params, request/response shapes, errors | [Done](docs/api-reference.md) |
 | [Cache sync](todos/cache-sync.md) | Fix identity/group/chatNames cache-DB desync: missing updates, stale LID entries, startup gaps | Planned |
-| [API sent tracking](todos/api-sent-tracking.md) | Track which app sent each API message, expose `sentByYou` in webhooks to prevent bot loops | Done |
 | [Message edits](todos/message-edits.md) | Handle WhatsApp message edits: update content in DB, dispatch `message.edited` webhook | Planned |
+
+### Completed
+
+| Feature | Docs | Description |
+|---|---|---|
+| API reference | [docs/api-reference.md](docs/api-reference.md) | Full docs for all endpoints: params, request/response shapes, errors |
+| API sent tracking | — | Track which app sent each API message, expose `sentByYou` in webhooks to prevent bot loops |

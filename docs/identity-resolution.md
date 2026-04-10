@@ -6,8 +6,6 @@ The same person can appear under 5+ different identifiers in our system. Message
 
 ---
 
----
-
 ## Raw Data from Every Source
 
 ### 1. Live DM message (received while server running)
@@ -530,22 +528,3 @@ Any alias works as input — transparently resolved to canonical.
 - **14 history-synced status messages** with no sender data in raw_json — permanently anonymous
 - **DM-only contacts not in any group** where no live message has arrived — LID stays as canonical until mapping discovered via `lid-mapping.update` or live message
 - **Phone address book names** — impossible via any linked device approach (Baileys, whatsmeow, or any other)
-
----
-
-### What stays unsolvable
-
-- **14 status messages** with no sender data in raw_json — permanently anonymous
-- **DM-only contacts not in any group** where no live message has arrived — LID stays as canonical until mapping discovered
-- **Phone address book names** — impossible via any linked device approach
-
-### Files to change
-
-| File | Changes |
-|---|---|
-| `adapters/baileys/store.ts` | Replace `jid_map` with `identities` table, new methods, update JOINs |
-| `adapters/baileys/index.ts` | `resolveCanonicalJid()` on every write, discovery on group sync + live DMs + lid-mapping.update |
-| `core/jid.ts` | Add `resolveCanonicalJid()` |
-| `migrations/` | New migration to build identities from existing data, normalize all IDs |
-| `routes/api.ts` | No changes needed — storage-time normalization means queries work as-is |
-| `routes/dashboard-api.ts` | No changes needed |

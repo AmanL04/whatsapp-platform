@@ -1,5 +1,9 @@
 # Group Metadata Caching
 
+> **Status:** Implemented (migration `0002_group-metadata-cache.ts`).
+> Remaining cache-DB synchronization bugs are tracked in
+> [`todos/cache-sync.md`](../todos/cache-sync.md).
+
 ## Problem
 
 Group metadata (subject, participants) is fetched from WhatsApp's API in multiple places without persistent caching:
