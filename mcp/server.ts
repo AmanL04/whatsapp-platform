@@ -128,15 +128,6 @@ export function createMcpServer(adapter: WAAdapter, store: SQLiteStore): McpServ
     }
   })
 
-  // ─── Resources ────────────────────────────────────────────────────────────
-
-  server.registerResource('chats', 'whatsapp://chats', {}, async () => ({
-    contents: [{
-      uri: 'whatsapp://chats',
-      mimeType: 'application/json',
-      text: JSON.stringify(await adapter.getChats({ limit: 100 }), null, 2),
-    }],
-  }))
 
   return server
 }

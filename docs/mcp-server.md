@@ -67,12 +67,6 @@ Stdio transport (`npm run mcp`) has no auth — it's a local process.
 
 `send_message` is marked as destructive — MCP clients will ask for confirmation before executing. Only available via HTTP transport (requires live WhatsApp connection).
 
-## Resources
-
-| URI | Description |
-|---|---|
-| `whatsapp://chats` | List of all chats (up to 100) |
-
 ## Example Prompts
 
 After connecting, try:
