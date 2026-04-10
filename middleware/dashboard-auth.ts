@@ -28,94 +28,91 @@ export class DashboardAuth {
     this.appEnv = appEnv
   }
 
-  /** Send OTP to the connected WhatsApp number */
-  async sendOtp(_req: Request, res: Response) {
-    // Rate limit OTP requests
+  // ─── Reusable OTP methods (used by dashboard + OAuth authorize) ────────────
+
+  /** Generate and send OTP. Returns result without touching Express response. */
+  async generateAndSendOtp(): Promise<{ ok: boolean; error?: string; status?: number }> {
     const now = Date.now()
     this.otpRequestTimestamps = this.otpRequestTimestamps.filter(t => now - t < OTP_RATE_WINDOW_MS)
     if (this.otpRequestTimestamps.length >= MAX_OTP_REQUESTS) {
-      res.status(429).json({ error: 'Too many OTP requests. Try again in a few minutes.' })
-      return
+      return { ok: false, error: 'Too many OTP requests. Try again in a few minutes.', status: 429 }
     }
 
-    // Check if adapter is connected
     if (!this.adapter.isConnected()) {
-      res.status(503).json({ error: 'WhatsApp is not connected. Use `npm run reconnect` to fix.' })
-      return
+      return { ok: false, error: 'WhatsApp is not connected. Use `npm run reconnect` to fix.', status: 503 }
     }
 
-    // Generate 6-digit OTP
     const code = crypto.randomInt(100000, 999999).toString()
-    this.currentOtp = {
-      code,
-      expiresAt: now + OTP_EXPIRY_MS,
-      attempts: 0,
-    }
+    this.currentOtp = { code, expiresAt: now + OTP_EXPIRY_MS, attempts: 0 }
     this.otpRequestTimestamps.push(now)
 
-    // Get own JID and send OTP
     const ownJid = (this.adapter as any).getOwnJid?.()
     if (!ownJid) {
-      res.status(503).json({ error: 'Could not determine WhatsApp number. Try reconnecting.' })
-      return
+      return { ok: false, error: 'Could not determine WhatsApp number. Try reconnecting.', status: 503 }
     }
 
     try {
-      await this.adapter.sendMessage(ownJid, `Your WA Companion dashboard login code: ${code}\n\nThis code expires in 5 minutes.`)
+      await this.adapter.sendMessage(ownJid, `Your WA Companion login code: ${code}\n\nThis code expires in 5 minutes.`)
       console.log(`[auth] OTP sent to ${ownJid}`)
-      res.json({ ok: true, message: 'OTP sent to your WhatsApp' })
+      return { ok: true }
     } catch (err) {
       console.error('[auth] Failed to send OTP:', err)
-      res.status(500).json({ error: 'Failed to send OTP' })
+      return { ok: false, error: 'Failed to send OTP', status: 500 }
     }
+  }
+
+  /** Verify an OTP code. Returns result without touching Express response. */
+  verifyOtpCode(code: string): { valid: boolean; error?: string; status?: number; attemptsRemaining?: number } {
+    if (!code) return { valid: false, error: 'Missing code', status: 400 }
+    if (!this.currentOtp) return { valid: false, error: 'No OTP pending. Request one first.', status: 400 }
+
+    if (Date.now() > this.currentOtp.expiresAt) {
+      this.currentOtp = null
+      return { valid: false, error: 'OTP expired. Request a new one.', status: 400 }
+    }
+
+    this.currentOtp.attempts++
+    if (this.currentOtp.attempts > MAX_VERIFY_ATTEMPTS) {
+      this.currentOtp = null
+      return { valid: false, error: 'Too many attempts. Request a new OTP.', status: 429 }
+    }
+
+    if (code !== this.currentOtp.code) {
+      return { valid: false, error: 'Invalid code', status: 401, attemptsRemaining: MAX_VERIFY_ATTEMPTS - this.currentOtp.attempts }
+    }
+
+    this.currentOtp = null
+    return { valid: true }
+  }
+
+  // ─── Express route handlers (delegate to reusable methods) ─────────────────
+
+  /** Send OTP to the connected WhatsApp number */
+  async sendOtp(_req: Request, res: Response) {
+    const result = await this.generateAndSendOtp()
+    if (!result.ok) {
+      res.status(result.status ?? 500).json({ error: result.error })
+      return
+    }
+    res.json({ ok: true, message: 'OTP sent to your WhatsApp' })
   }
 
   /** Verify OTP and issue JWT */
   verifyOtp(req: Request, res: Response) {
-    const { code } = req.body
-    if (!code) {
-      res.status(400).json({ error: 'Missing code' })
+    const result = this.verifyOtpCode(req.body.code)
+    if (!result.valid) {
+      res.status(result.status ?? 400).json({ error: result.error, attemptsRemaining: result.attemptsRemaining })
       return
     }
 
-    if (!this.currentOtp) {
-      res.status(400).json({ error: 'No OTP pending. Request one first.' })
-      return
-    }
-
-    // Check expiry
-    if (Date.now() > this.currentOtp.expiresAt) {
-      this.currentOtp = null
-      res.status(400).json({ error: 'OTP expired. Request a new one.' })
-      return
-    }
-
-    // Check attempts
-    this.currentOtp.attempts++
-    if (this.currentOtp.attempts > MAX_VERIFY_ATTEMPTS) {
-      this.currentOtp = null
-      res.status(429).json({ error: 'Too many attempts. Request a new OTP.' })
-      return
-    }
-
-    // Verify code
-    if (code !== this.currentOtp.code) {
-      res.status(401).json({ error: 'Invalid code', attemptsRemaining: MAX_VERIFY_ATTEMPTS - this.currentOtp.attempts })
-      return
-    }
-
-    // Success — clear OTP and issue JWT
-    this.currentOtp = null
     const token = jwt.sign({ type: 'dashboard' }, this.jwtSecret, { expiresIn: JWT_EXPIRY })
-
     const isProduction = this.appEnv === 'prod' || this.appEnv === 'dev'
     res.cookie('wa_session', token, {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'strict',
-      maxAge: 60 * 60 * 1000, // 1 hour
+      maxAge: 60 * 60 * 1000,
     })
-
     res.json({ ok: true })
   }
 

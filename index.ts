@@ -19,6 +19,9 @@ import type { EventName } from './core/events'
 import cron from 'node-cron'
 import { createMcpServer } from './mcp/server'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js'
+import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js'
+import { WhatsAppOAuthProvider } from './mcp/auth'
 
 // ─── Environment validation ──────────────────────────────────────────────────
 
@@ -157,17 +160,48 @@ async function main() {
     })
   }
 
-  // ─── /mcp — MCP server for AI assistants ──────────────────────────────────
+  // ─── /mcp — MCP server for AI assistants (OAuth 2.1 protected) ────────────
 
+  const oauthProvider = new WhatsAppOAuthProvider(store.getDb(), dashboardAuth)
+
+  // OAuth endpoints: /.well-known/*, /authorize, /token, /register, /revoke
+  const baseUrl = DASHBOARD_ORIGIN ?? `http://localhost:${PORT}`
+  app.use(mcpAuthRouter({
+    provider: oauthProvider,
+    issuerUrl: new URL(baseUrl),
+    serviceDocumentationUrl: new URL(`${baseUrl}/dashboard/`),
+  }))
+
+  // OTP endpoints for the authorize page
+  app.post('/auth/mcp/send-otp', async (_req, res) => {
+    const result = await oauthProvider.handleAuthSendOtp()
+    if (!result.ok) {
+      res.status(500).json(result)
+      return
+    }
+    res.json(result)
+  })
+
+  app.post('/auth/mcp/verify-otp', (req, res) => {
+    const { code, requestId, state } = req.body
+    const result = oauthProvider.handleAuthVerifyOtp(code, requestId, state)
+    if (result.error) {
+      res.status(400).json(result)
+      return
+    }
+    res.json(result)
+  })
+
+  // MCP endpoint — protected by OAuth bearer token
   const mcpServer = createMcpServer(adapter, store)
   const mcpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
   await mcpServer.connect(mcpTransport)
 
-  app.all('/mcp', async (req, res) => {
+  app.all('/mcp', requireBearerAuth({ verifier: oauthProvider }), async (req, res) => {
     await mcpTransport.handleRequest(req, res, req.body)
   })
 
-  console.log('[mcp] MCP server mounted at /mcp')
+  console.log('[mcp] MCP server mounted at /mcp (OAuth 2.1 protected)')
 
   // ─── Test webhook endpoint (local self-testing only) ──────────────────────
 
