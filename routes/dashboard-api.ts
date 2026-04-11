@@ -166,6 +166,21 @@ export function createDashboardApiRouter(
     }
   })
 
+  // Send message
+  router.post('/api/messages/send', async (req, res) => {
+    const { chatId, content } = req.body
+    if (!chatId || !content) {
+      res.status(400).json({ error: 'Missing chatId or content' })
+      return
+    }
+    try {
+      const id = await adapter.sendMessage(chatId, content)
+      res.json({ ok: true, id })
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to send message' })
+    }
+  })
+
   // Existing data endpoints (for debug/viewer UI)
   router.get('/api/chats', async (req, res) => {
     try {

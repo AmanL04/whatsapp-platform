@@ -237,11 +237,9 @@ Planned features with design docs:
 | Feature | Plan | Status |
 |---|---|---|
 | **Platform** | | |
-| MCP server | Expose chats, messages, media, search as MCP tools for AI assistants — `npm run mcp` | Done |
 | [App catalog & installation](todos/app-publishing.md) | Manifest format, catalog loader, install/uninstall flow, dashboard catalog UI (Approach A) | Planned |
 | [First-party apps](todos/first-party-apps.md) | 6 external apps (Summary, Search, Tasks, Voice Transcribe, Media Recap, Read Later) using the webhook+API system | Planned |
 | [Update CLAUDE.md](todos/update-claude-md.md) | Refresh Claude Code context file with current state, new focus areas, and doc pointers | Planned |
 | **Server** | | |
 | [Mention tags](todos/mention-tags.md) | Resolve `@number` in messages to display names, render as styled chips in dashboard | Planned |
-| [Send message](todos/send-message-dashboard.md) | Text input in dashboard Messages tab, new dashboard API endpoint | Planned |
 | [Audit logging](todos/api-audit-logging.md) | Log MCP tool calls, app API requests, dashboard usage — console + DB + dashboard UI | Planned |
