@@ -553,13 +553,13 @@ function MessagesTab() {
                 disabled={sending}
                 className="flex-1 px-3 py-2 rounded-[var(--radius-md)] border-2 border-[var(--border)] bg-[var(--bg-surface)] text-sm font-medium placeholder-[var(--text-tertiary)] focus:outline-none focus:shadow-[var(--shadow-brutal-color)] disabled:opacity-50"
               />
-              <BrutalBtn
+              <button
                 onClick={sendMessage}
                 disabled={sending || !draft.trim()}
-                className="bg-[var(--accent)] text-white py-2"
+                className="brutal px-3 py-2 rounded-[var(--radius-md)] bg-[var(--accent)] text-white text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {sending ? 'Sending...' : 'Send'}
-              </BrutalBtn>
+                {sending ? '...' : '➤'}
+              </button>
           </div>
         )}
       </div>
