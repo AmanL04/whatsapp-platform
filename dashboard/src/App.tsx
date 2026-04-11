@@ -334,8 +334,8 @@ function MessagesTab() {
   const PAGE = 50
 
   // Load initial chats
-  const loadChats = useCallback(async () => {
-    setCl(true)
+  const loadChats = useCallback(async (showLoading = true) => {
+    if (showLoading) setCl(true)
     try {
       const r = await apiFetch(`${API}/chats?limit=${PAGE}`)
       if (r.ok) {
@@ -344,7 +344,7 @@ function MessagesTab() {
         setChatsExhausted(data.length < PAGE)
       }
     } catch { /* handled by apiFetch */ }
-    setCl(false)
+    if (showLoading) setCl(false)
   }, [])
 
   // Load more chats (older)
@@ -366,17 +366,17 @@ function MessagesTab() {
   }, [chats, loadingMoreChats, chatsExhausted])
 
   // Load messages for selected chat
-  const loadMessages = useCallback(async (chatId: string) => {
-    setMl(true); setMsgs([]); setMsgsExhausted(false)
+  const loadMessages = useCallback(async (chatId: string, limit = PAGE, showLoading = true) => {
+    if (showLoading) setMl(true); setMsgsExhausted(false)
     try {
-      const r = await apiFetch(`${API}/messages?chatId=${chatId}&limit=${PAGE}`)
+      const r = await apiFetch(`${API}/messages?chatId=${chatId}&limit=${limit}`)
       if (r.ok) {
         const data = await r.json() as Message[]
         setMsgs(data)
-        setMsgsExhausted(data.length < PAGE)
+        setMsgsExhausted(data.length < limit)
       }
     } catch { /* handled */ }
-    setMl(false)
+    if (showLoading) setMl(false)
   }, [])
 
   // Load more messages (older)
@@ -425,8 +425,37 @@ function MessagesTab() {
     if (el.scrollTop < 50) loadMoreMsgs()
   }, [loadMoreMsgs])
 
-  const rc = loadChats
-  const rm = () => { if (sel) loadMessages(sel) }
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+
+  const sendMessage = useCallback(async () => {
+    if (!sel || !draft.trim() || sending) return
+    const chatId = sel
+    setSending(true)
+    setSendError(null)
+    try {
+      const r = await apiFetch(`${API}/messages/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId, content: draft.trim() }),
+      })
+      if (r.ok) {
+        setDraft('')
+        shouldScroll.current = true
+        setTimeout(() => loadMessages(chatId, 10, false), 500)
+      } else {
+        const data = await r.json().catch(() => null)
+        setSendError(data?.error || 'Failed to send')
+      }
+    } catch {
+      setSendError('Failed to send')
+    }
+    setSending(false)
+  }, [sel, draft, sending, loadMessages])
+
+  const rc = () => loadChats(false)
+  const rm = () => { if (sel) { shouldScroll.current = true; loadMessages(sel, PAGE, false) } }
   const filteredChats = chats.filter(c => !search || (c.name || c.id).toLowerCase().includes(search.toLowerCase()))
   const selectedChat = chats.find(c => c.id === sel)
 
@@ -513,6 +542,26 @@ function MessagesTab() {
           )
         }
         </div>
+        {sendError && <div className="px-4 py-1 text-xs font-bold text-red-500 border-t-2 border-[var(--border)] bg-[var(--bg-surface)]">{sendError}</div>}
+        {sel && (
+          <div className="h-[60px] px-4 flex items-center gap-2 border-t-2 border-[var(--border)] bg-[var(--bg-surface)]">
+              <input
+                value={draft}
+                onChange={e => { setDraft(e.target.value); setSendError(null) }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                placeholder="Type a message..."
+                disabled={sending}
+                className="flex-1 px-3 py-2 rounded-[var(--radius-md)] border-2 border-[var(--border)] bg-[var(--bg-surface)] text-sm font-medium placeholder-[var(--text-tertiary)] focus:outline-none focus:shadow-[var(--shadow-brutal-color)] disabled:opacity-50"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={sending || !draft.trim()}
+                className="brutal px-3 py-2 rounded-[var(--radius-md)] bg-[var(--accent)] text-white text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sending ? '...' : '➤'}
+              </button>
+          </div>
+        )}
       </div>
     </div>
   )
